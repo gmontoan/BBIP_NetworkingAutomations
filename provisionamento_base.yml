@@ -1,6 +1,7 @@
 ---
 - name: Provisionamento Base Multi-Vendor via AAP Survey
-  hosts: "{{ survey_grupo }}"
+  # Usa a interseção: garante que o host digitado pertence ao grupo escolhido
+  hosts: "{{ survey_grupo }}:&{{ survey_host }}"
   gather_facts: no
 
   tasks:
@@ -18,7 +19,7 @@
           cisco.ios.ios_interfaces:
             config:
               - name: "{{ survey_interface }}"
-                description: "Configurado via AAP - Cisco"
+                description: "Configurado via AAP - Automacao"
                 enabled: true
           
         - name: Configurar o endereço IP na Interface (Cisco)
@@ -26,7 +27,6 @@
             config:
               - name: "{{ survey_interface }}"
                 ipv4:
-                  # Cisco aceita o formato IP + Máscara Decimal (ex: 192.168.1.1 255.255.255.0)
                   - address: "{{ survey_ip_address }} {{ survey_mascara }}"
 
         - name: Garantir configuracoes de acesso remoto (Cisco)
@@ -52,7 +52,7 @@
           arista.eos.eos_interfaces:
             config:
               - name: "{{ survey_interface }}"
-                description: "Configurado via AAP - Arista"
+                description: "Configurado via AAP - Automacao"
                 enabled: true
 
         - name: Configurar o endereço IP na Interface (Arista)
@@ -60,7 +60,6 @@
             config:
               - name: "{{ survey_interface }}"
                 ipv4:
-                  # Arista utiliza formato CIDR nativamente (ex: 192.168.1.1/24)
                   - address: "{{ survey_ip_address }}/{{ survey_mascara_cidr }}"
 
         - name: Garantir configuracoes de eAPI e Usuario (Arista)
