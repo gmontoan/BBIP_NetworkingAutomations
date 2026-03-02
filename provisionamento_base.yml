@@ -1,0 +1,72 @@
+---
+- name: Provisionamento Base Multi-Vendor via AAP Survey
+  hosts: "{{ survey_grupo }}"
+  gather_facts: no
+
+  tasks:
+    # =========================================================
+    # BLOCO 1: CISCO IOS
+    # =========================================================
+    - name: Executar provisionamento para roteadores Cisco
+      when: ansible_network_os == 'cisco.ios.ios'
+      block:
+        - name: Configurar Hostname (Cisco)
+          cisco.ios.ios_system:
+            hostname: "{{ survey_hostname }}"
+
+        - name: Habilitar a Interface (Cisco)
+          cisco.ios.ios_interfaces:
+            config:
+              - name: "{{ survey_interface }}"
+                description: "Configurado via AAP - Cisco"
+                enabled: true
+          
+        - name: Configurar o endereço IP na Interface (Cisco)
+          cisco.ios.ios_l3_interfaces:
+            config:
+              - name: "{{ survey_interface }}"
+                ipv4:
+                  # Cisco aceita o formato IP + Máscara Decimal (ex: 192.168.1.1 255.255.255.0)
+                  - address: "{{ survey_ip_address }} {{ survey_mascara }}"
+
+        - name: Garantir configuracoes de acesso remoto (Cisco)
+          cisco.ios.ios_config:
+            lines:
+              - ip domain-name rede.local
+              - username ansible privilege 15 secret Ansible@123
+              - line vty 0 4
+              - login local
+              - transport input all
+
+    # =========================================================
+    # BLOCO 2: ARISTA EOS
+    # =========================================================
+    - name: Executar provisionamento para switches Arista
+      when: ansible_network_os == 'arista.eos.eos'
+      block:
+        - name: Configurar Hostname (Arista)
+          arista.eos.eos_system:
+            hostname: "{{ survey_hostname }}"
+
+        - name: Habilitar a Interface (Arista)
+          arista.eos.eos_interfaces:
+            config:
+              - name: "{{ survey_interface }}"
+                description: "Configurado via AAP - Arista"
+                enabled: true
+
+        - name: Configurar o endereço IP na Interface (Arista)
+          arista.eos.eos_l3_interfaces:
+            config:
+              - name: "{{ survey_interface }}"
+                ipv4:
+                  # Arista utiliza formato CIDR nativamente (ex: 192.168.1.1/24)
+                  - address: "{{ survey_ip_address }}/{{ survey_mascara_cidr }}"
+
+        - name: Garantir configuracoes de eAPI e Usuario (Arista)
+          arista.eos.eos_config:
+            lines:
+              - ip domain-name rede.local
+              - username ansible privilege 15 secret Ansible@123
+              - management api http-commands
+              - no shutdown
