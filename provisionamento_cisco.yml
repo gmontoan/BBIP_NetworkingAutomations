@@ -18,7 +18,9 @@
 
     - name: Configurar Hostname
       cisco.ios.ios_hostname:
-        hostname: "{{ target_hostname }}"
+        config:
+          name: "{{ target_hostname }}"
+      # Removi o 'state: merged' para evitar o conflito de parâmetros
 
     - name: Configurar IP na Interface Física
       cisco.ios.ios_l3_interfaces:
