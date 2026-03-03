@@ -4,9 +4,9 @@
   gather_facts: no
   
   tasks:
-    - name: Abortar Playbook INTEIRO se o Survey não for Arista
+    - name: Abortar Playbook INTEIRO se o Survey não for Cisco
       ansible.builtin.meta: end_play
-      when: target_group != "arista_switches"
+      when: target_group != "cisco_routers"
       
     - name: Criar Usuário Ansible com Privilégio 15
       cisco.ios.ios_user:
