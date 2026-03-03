@@ -1,10 +1,17 @@
 ---
-- name: Provisionamento Cisco
+- name: Provisionamento Cisco com Usuário Ansible
   hosts: all
   tasks:
     - name: Abortar se não for grupo Cisco
       ansible.builtin.meta: end_host
       when: target_group != "cisco_routers"
+
+    - name: Criar Usuário Ansible com Privilégio 15
+      cisco.ios.ios_user:
+        name: ansible
+        privilege: 15
+        password: redhat
+        state: present
 
     - name: Configurar Hostname
       cisco.ios.ios_hostname:
@@ -17,3 +24,10 @@
             ipv4:
               - address: "{{ ipv4_address }}"
         state: merged
+
+    - name: Garantir Acesso VTY com Login Local
+      cisco.ios.ios_config:
+        parents: line vty 0 4
+        lines:
+          - login local
+          - transport input ssh
