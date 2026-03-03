@@ -3,8 +3,8 @@
   hosts: all
   gather_facts: no
   tasks:
-    - name: Abortar se não for grupo Arista
-      ansible.builtin.meta: end_host
+    - name: Abortar Playbook INTEIRO se o Survey não for Arista
+      ansible.builtin.meta: end_play
       when: target_group != "arista_switches"
 
     - name: Criar Usuário Ansible Administrativo
