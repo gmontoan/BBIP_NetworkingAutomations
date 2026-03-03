@@ -1,6 +1,6 @@
 ---
 - name: Provisionamento Arista com Usuário Ansible
-  hosts: all
+  hosts: "{{ target_hostname }}"
   gather_facts: no
   tasks:
     - name: Abortar Playbook INTEIRO se o Survey não for Arista
