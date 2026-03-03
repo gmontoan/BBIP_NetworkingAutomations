@@ -1,23 +1,19 @@
 ---
-- name: Configuração de Dispositivos Cisco IOS
+- name: Provisionamento Cisco
   hosts: all
-  gather_facts: no
   tasks:
+    - name: Abortar se não for grupo Cisco
+      ansible.builtin.meta: end_host
+      when: target_group != "cisco_routers"
+
     - name: Configurar Hostname
       cisco.ios.ios_hostname:
-        name: "{{ inventory_hostname }}"
+        name: "{{ target_hostname }}"
 
-    - name: Configurar Endereço IP na Interface
+    - name: Configurar IP na Interface Física
       cisco.ios.ios_l3_interfaces:
         config:
-          - name: "{{ interface_name | default('GigabitEthernet1') }}"
+          - name: "{{ physical_interface }}"
             ipv4:
               - address: "{{ ipv4_address }}"
         state: merged
-
-    - name: Garantir Configurações de Acesso Remoto (VTY)
-      cisco.ios.ios_config:
-        parents: line vty 0 4
-        lines:
-          - login local
-          - transport input ssh
