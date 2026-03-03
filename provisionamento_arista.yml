@@ -1,34 +1,42 @@
 ---
-- name: Provisionamento Arista
+- name: Provisionamento Arista com Usuário Ansible
   hosts: all
   tasks:
     - name: Abortar se não for grupo Arista
       ansible.builtin.meta: end_host
       when: target_group != "arista_switches"
 
+    - name: Criar Usuário Ansible Administrativo
+      arista.eos.eos_user:
+        name: ansible
+        privilege: 15
+        role: network-admin
+        password: redhat
+        state: present
+
     - name: Configurar Hostname
       arista.eos.eos_hostname:
         hostname: "{{ target_hostname }}"
 
-    - name: Criar Interface VLAN
+    - name: Criar VLAN e Interface SVI
       arista.eos.eos_vlans:
         config:
-          - vlan_id: "{{ arista_vlan_info.split(',')[0] }}"
-            name: "{{ arista_vlan_info.split(',')[1] }}"
+          - vlan_id: "{{ arista_vlan_info.split(',')[0] | trim }}"
+            name: "{{ arista_vlan_info.split(',')[1] | trim }}"
         state: merged
 
-    - name: Configurar Porta Física como Trunk ou Access para a VLAN
+    - name: Configurar Porta Física (Acesso VLAN)
       arista.eos.eos_l2_interfaces:
         config:
           - name: "{{ physical_interface }}"
             access:
-              vlan: "{{ arista_vlan_info.split(',')[0] }}"
+              vlan: "{{ arista_vlan_info.split(',')[0] | trim }}"
         state: merged
 
-    - name: Atribuir IP à Interface VLAN (SVI)
+    - name: Atribuir IP à SVI
       arista.eos.eos_l3_interfaces:
         config:
-          - name: "Vlan{{ arista_vlan_info.split(',')[0] }}"
+          - name: "Vlan{{ arista_vlan_info.split(',')[0] | trim }}"
             ipv4:
               - address: "{{ ipv4_address }}"
         state: merged
