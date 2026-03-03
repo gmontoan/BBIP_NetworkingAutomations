@@ -18,9 +18,7 @@
 
     - name: Configurar Hostname
       cisco.ios.ios_hostname:
-        config:
-          name: "{{ target_hostname }}"
-      # Removi o 'state: merged' para evitar o conflito de parâmetros
+        hostname: "{{ target_hostname }}"
 
     - name: Configurar IP na Interface Física
       cisco.ios.ios_l3_interfaces:
@@ -30,7 +28,7 @@
               - address: "{{ ipv4_address }}"
         state: merged
 
-    - name: Garantir Acesso VTY com Login Local
+    - name: Garantir Acesso VTY
       cisco.ios.ios_config:
         parents: line vty 0 4
         lines:
