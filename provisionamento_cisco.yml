@@ -1,7 +1,6 @@
 ---
 - name: Provisionamento Cisco com Usuário Ansible
   hosts: all
-  # Desabilitamos a coleta automática para evitar o erro de banner SSH
   gather_facts: no
   
   tasks:
@@ -13,13 +12,14 @@
       cisco.ios.ios_user:
         name: ansible
         privilege: 15
-        # Corrigido de 'password' para 'configured_password'
         configured_password: redhat
         state: present
 
     - name: Configurar Hostname
       cisco.ios.ios_hostname:
-        name: "{{ target_hostname }}"
+        config:
+          name: "{{ target_hostname }}"
+        state: merged
 
     - name: Configurar IP na Interface Física
       cisco.ios.ios_l3_interfaces:
