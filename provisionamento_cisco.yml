@@ -1,6 +1,6 @@
 ---
 - name: Provisionamento Cisco com Usuário Ansible
-  hosts: all
+  hosts: "{{ target_hostname }}"
   gather_facts: no
   
   tasks:
