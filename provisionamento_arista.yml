@@ -1,0 +1,22 @@
+---
+- name: Configuração de Dispositivos Arista EOS
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Configurar Hostname
+      arista.eos.eos_hostname:
+        hostname: "{{ inventory_hostname }}"
+
+    - name: Configurar Endereço IP na Interface
+      arista.eos.eos_l3_interfaces:
+        config:
+          - name: "{{ interface_name | default('Ethernet1') }}"
+            ipv4:
+              - address: "{{ ipv4_address }}"
+        state: merged
+
+    - name: Configurar SSH e Acesso
+      arista.eos.eos_config:
+        lines:
+          - management ssh
+          - idle-timeout 15
