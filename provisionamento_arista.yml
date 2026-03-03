@@ -1,6 +1,7 @@
 ---
 - name: Provisionamento Arista com Usuário Ansible
   hosts: all
+  gather_facts: no
   tasks:
     - name: Abortar se não for grupo Arista
       ansible.builtin.meta: end_host
@@ -14,11 +15,12 @@
         password: redhat
         state: present
 
-    - name: Configurar Hostname
-      arista.eos.eos_hostname:
-        hostname: "{{ target_hostname }}"
+    - name: Configurar Hostname (Arista)
+      arista.eos.eos_config:
+        lines:
+          - "hostname {{ target_hostname }}"
 
-    - name: Criar VLAN e Interface SVI
+    - name: Criar VLAN
       arista.eos.eos_vlans:
         config:
           - vlan_id: "{{ arista_vlan_info.split(',')[0] | trim }}"
@@ -33,7 +35,7 @@
               vlan: "{{ arista_vlan_info.split(',')[0] | trim }}"
         state: merged
 
-    - name: Atribuir IP à SVI
+    - name: Atribuir IP à SVI (Interface VLAN)
       arista.eos.eos_l3_interfaces:
         config:
           - name: "Vlan{{ arista_vlan_info.split(',')[0] | trim }}"
