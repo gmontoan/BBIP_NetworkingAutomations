@@ -14,6 +14,7 @@
         privilege: 15
         configured_password: redhat
         state: present
+      ignore_errors: yes  # Se já existir ou der erro de auth, ele pula para a próxima
 
     - name: Configurar Hostname
       cisco.ios.ios_hostname:
@@ -28,10 +29,3 @@
             ipv4:
               - address: "{{ ipv4_address }}"
         state: merged
-
-    - name: Garantir Acesso VTY com Login Local
-      cisco.ios.ios_config:
-        parents: line vty 0 4
-        lines:
-          - login local
-          - transport input ssh
