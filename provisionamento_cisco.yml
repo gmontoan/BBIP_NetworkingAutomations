@@ -1,6 +1,9 @@
 ---
 - name: Provisionamento Cisco com Usuário Ansible
   hosts: all
+  # Desabilitamos a coleta automática para evitar o erro de banner SSH
+  gather_facts: no
+  
   tasks:
     - name: Abortar se não for grupo Cisco
       ansible.builtin.meta: end_host
@@ -10,7 +13,8 @@
       cisco.ios.ios_user:
         name: ansible
         privilege: 15
-        password: redhat
+        # Corrigido de 'password' para 'configured_password'
+        configured_password: redhat
         state: present
 
     - name: Configurar Hostname
