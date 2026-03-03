@@ -12,8 +12,9 @@
         name: ansible
         privilege: 15
         role: network-admin
-        password: redhat
+        configured_password: redhat
         state: present
+      ignore_errors: yes
 
     - name: Configurar Hostname (Arista)
       arista.eos.eos_config:
