@@ -16,9 +16,10 @@
         state: present
       ignore_errors: yes
 
-    - name: Configurar Hostname
-      cisco.ios.ios_hostname:
-        hostname: "{{ target_hostname }}"
+    - name: Configurar Hostname (via comando CLI puro)
+      cisco.ios.ios_config:
+        lines:
+          - "hostname {{ target_hostname }}"
 
     - name: Configurar IP na Interface Física
       cisco.ios.ios_l3_interfaces:
