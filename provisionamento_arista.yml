@@ -2,6 +2,8 @@
 - name: Provisionamento Arista com Usuário Ansible
   hosts: "{{ target_hostname }}"
   gather_facts: no
+  become: yes            # Força o Ansible a pedir elevação de privilégio
+  become_method: enable  # Diz que o método de elevação é o comando 'enable' (padrão de redes)
   tasks:
     - name: Abortar Playbook INTEIRO se o Survey não for Arista
       ansible.builtin.meta: end_play
