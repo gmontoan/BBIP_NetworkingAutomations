@@ -12,7 +12,7 @@
       cisco.ios.ios_user:
         name: ansible
         privilege: 15
-        configured_password: redhat
+        configured_password: Ansible@123
         state: present
       ignore_errors: yes
 
