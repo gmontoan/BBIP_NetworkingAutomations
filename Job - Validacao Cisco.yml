@@ -1,0 +1,34 @@
+---
+- name: Verificação Pós-Provisionamento (Cisco)
+  hosts: "{{ target_hostname }}"
+  gather_facts: no
+  become: yes
+  become_method: enable
+
+  tasks:
+    - name: Abortar Playbook INTEIRO se o Survey não for Cisco
+      ansible.builtin.meta: end_play
+      when: target_group != "cisco_routers"
+
+    - name: Executar comandos de validação (Cisco)
+      cisco.ios.ios_command:
+        commands:
+          - show version
+          - show ip interface brief
+          - show ip ospf neighbor
+          - show ip bgp summary
+          - show running-config
+      register: cisco_output
+
+    - name: Exibir Relatório de Validação (Cisco)
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - " RELATÓRIO DE VALIDAÇÃO - CISCO IOS "
+          - "=========================================="
+          - ">>> SHOW IP INTERFACE BRIEF <<<"
+          - "{{ cisco_output.stdout[1] }}"
+          - ">>> SHOW IP OSPF NEIGHBOR <<<"
+          - "{{ cisco_output.stdout[2] }}"
+          - ">>> SHOW IP BGP SUMMARY <<<"
+          - "{{ cisco_output.stdout[3] }}"
