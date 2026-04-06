@@ -5,8 +5,9 @@
 
   # -------------------------------------------------------------------------
   # NOTA DE EXECUÇÃO (AAP 2.6):
-  # Utilizamos o Token OAuth2 gerado manualmente para contornar o erro 404 
-  # do Gateway na fase de 'get token'.
+  # No AAP 2.6, a API do Controller está atrás do Gateway no path /api/controller.
+  # Como a coleção awx.awx local é antiga, injetamos o path diretamente no host
+  # para que o módulo acerte no endpoint correto (/api/controller/api/v2/).
   # -------------------------------------------------------------------------
 
   tasks:
@@ -43,13 +44,13 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (Via Token OAuth2)
+    # 3. ATUALIZAÇÃO DO SURVEY (Ajuste de Path para AAP 2.6 Gateway)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
       awx.awx.job_template:
         name: "Provisioning Devices"
-        # Configurações de Conexão com Token Direto
-        controller_host: "https://192.168.15.200"
+        # Ajuste Crítico: Incluímos /api/controller para o Gateway do 2.6 rotear o tráfego
+        controller_host: "https://192.168.15.200/api/controller"
         controller_oauthtoken: "GFSZRmDUoQhNQijz3jTUp6nURS40uF"
         validate_certs: no
         
@@ -77,6 +78,6 @@
       delegate_to: localhost
       run_once: yes
       
-      # Garante que o tráfego não tenta sair por um proxy externo
+      # Bypass de proxy para garantir que o tráfego bate no IP local corretamente
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
