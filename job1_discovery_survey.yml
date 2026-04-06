@@ -1,0 +1,88 @@
+---
+- name: "JOB 1: Discovery Focado (Host Único) e Mutação de Survey"
+  # O AAP vai restringir isto através do "Limit" (Prompt on launch)
+  hosts: all
+  gather_facts: no
+  
+  tasks:
+    # =========================================================================
+    # 0. TRAVA DE SEGURANÇA
+    # =========================================================================
+    - name: "Garantir que o Job 1 corre apenas num único Host"
+      ansible.builtin.fail:
+        msg: "ERRO: Este Job deve correr apenas num equipamento. Por favor, defina um único host no campo 'Limit' ao lançar o Job."
+      when: ansible_play_hosts | length > 1
+      run_once: yes
+
+    # =========================================================================
+    # 1. RECOLHA DE FACTS (FOCADO)
+    # =========================================================================
+    - name: "Cisco: Coletar Interfaces L3/L2"
+      cisco.ios.ios_facts:
+        gather_subset: interfaces
+      when: ansible_network_os in ['ios', 'cisco.ios.ios']
+
+    - name: "Arista: Coletar Interfaces L3/L2"
+      arista.eos.eos_facts:
+        gather_subset: interfaces
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
+
+    - name: "Juniper: Coletar Interfaces L3/L2"
+      junipernetworks.junos.junos_facts:
+        gather_subset: interfaces
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
+
+    # =========================================================================
+    # 2. FILTRAGEM (APENAS O NOME DA INTERFACE)
+    # =========================================================================
+    - name: "Extrair apenas interfaces físicas para o dropdown"
+      ansible.builtin.set_fact:
+        host_interfaces: >-
+          {% set result = [] %}
+          {% for intf in ansible_net_interfaces.keys() %}
+          {%   if not intf | regex_search('Loopback|Null|Vlan|irb|mgmt') %}
+          {%     set _ = result.append(intf) %}
+          {%   endif %}
+          {% endfor %}
+          {{ result | sort }}
+      when: ansible_net_interfaces is defined
+
+    # =========================================================================
+    # 3. MUTAÇÃO DO SURVEY (INJEÇÃO VIA API PARA O JOB 2)
+    # =========================================================================
+    - name: "Atualizar Survey do Job 2 com as interfaces do {{ inventory_hostname }}"
+      awx.awx.job_template:
+        name: "Job 2 - Provisionamento InterOp" # Nome EXATO do seu Job 2 no AAP
+        survey_enabled: yes
+        survey_spec:
+          name: "Survey Dinamico"
+          description: "Interfaces validadas para o equipamento selecionado."
+          spec:
+            # Aproveitamos para passar o hostname de forma read-only (se suportado) ou apenas informativa
+            - question_name: "Host Alvo Configurado"
+              question_description: "O Job 1 preparou o Survey para este host."
+              variable: "survey_target_host"
+              type: "text"
+              default: "{{ inventory_hostname }}"
+              required: true
+              
+            - question_name: "Selecione a Interface"
+              question_description: "Interfaces físicas disponíveis no {{ inventory_hostname }}"
+              variable: "survey_interface"
+              type: "multiplechoice"
+              # Injetamos a lista pura: eth1, eth2, etc.
+              choices: "{{ host_interfaces | join('\n') }}"
+              required: true
+              
+            - question_name: "Endereço IP e Máscara (CIDR)"
+              question_description: "Ex: 10.0.0.1/30"
+              variable: "survey_ip_cidr"
+              type: "text"
+              required: true
+      delegate_to: localhost
+      run_once: yes
+      environment:
+        CONTROLLER_HOST: "https://{{ lookup('env', 'CONTROLLER_HOST') | default(lookup('env', 'AWX_HOST'), true) }}"
+        CONTROLLER_USERNAME: "{{ lookup('env', 'CONTROLLER_USERNAME') | default(lookup('env', 'AWX_USERNAME'), true) }}"
+        CONTROLLER_PASSWORD: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default(lookup('env', 'AWX_PASSWORD'), true) }}"
+        CONTROLLER_VERIFY_SSL: "false"
