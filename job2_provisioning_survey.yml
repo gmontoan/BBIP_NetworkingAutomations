@@ -1,0 +1,106 @@
+---
+- name: "JOB 2: Provisionamento de Interface L3 (InterOp Multivendor)"
+  # Restringe dinamicamente a execução ao host que o Job 1 definiu no Survey
+  hosts: "{{ survey_target_host | default('all') }}"
+  gather_facts: no
+  
+  # Variáveis padronizadas para garantir estabilidade OSPF/BGP entre fabricantes
+  vars:
+    padrao_mtu: 1500
+    padrao_desc: "[AAP] Link L3 InterOp - Automação Dinâmica"
+
+  pre_tasks:
+    # -------------------------------------------------------------------------
+    # VALIDAÇÃO DE SEGURANÇA
+    # -------------------------------------------------------------------------
+    - name: "Garantir que as variáveis do Survey existem"
+      ansible.builtin.fail:
+        msg: "ERRO: O Playbook foi executado sem os dados do Survey ('survey_interface' e 'survey_ip_cidr')."
+      when: survey_interface is not defined or survey_ip_cidr is not defined
+
+    - name: "Trava de Segurança: Abortar se for o Host errado"
+      ansible.builtin.meta: end_host
+      when: survey_target_host is defined and inventory_hostname != survey_target_host
+
+  tasks:
+    # =========================================================================
+    # BLOCO CISCO IOS / IOS-XE
+    # =========================================================================
+    - name: "Cisco: Configurar Interface Física (Ativar, MTU e Descrição)"
+      cisco.ios.ios_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            description: "{{ padrao_desc }}"
+            mtu: "{{ padrao_mtu }}"
+            enabled: true
+      when: ansible_network_os in ['ios', 'cisco.ios.ios']
+
+    - name: "Cisco: Configurar Endereço IPv4"
+      cisco.ios.ios_l3_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            ipv4:
+              - address: "{{ survey_ip_cidr }}"
+      when: ansible_network_os in ['ios', 'cisco.ios.ios']
+
+    # =========================================================================
+    # BLOCO ARISTA EOS (cEOS / vEOS)
+    # =========================================================================
+    - name: "Arista: Forçar porta para Modo L3 (no switchport)"
+      arista.eos.eos_config:
+        parents: "interface {{ survey_interface }}"
+        lines:
+          - no switchport
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
+
+    - name: "Arista: Configurar Interface Física (Ativar, MTU e Descrição)"
+      arista.eos.eos_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            description: "{{ padrao_desc }}"
+            mtu: "{{ padrao_mtu }}"
+            enabled: true
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
+
+    - name: "Arista: Configurar Endereço IPv4"
+      arista.eos.eos_l3_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            ipv4:
+              - address: "{{ survey_ip_cidr }}"
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
+
+    # =========================================================================
+    # BLOCO JUNIPER JUNOS (cRPD / cJunos)
+    # =========================================================================
+    - name: "Juniper: Configurar Interface Física (Ativar, MTU e Descrição)"
+      junipernetworks.junos.junos_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            description: "{{ padrao_desc }}"
+            mtu: "{{ padrao_mtu }}"
+            enabled: true
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
+
+    - name: "Juniper: Configurar Endereço IPv4 L3 (Unit 0)"
+      junipernetworks.junos.junos_l3_interfaces:
+        config:
+          # O Junos exige a sintaxe ".unit" para configuração de IP (ex: eth1.0)
+          - name: "{{ survey_interface }}.0"  
+            ipv4:
+              - address: "{{ survey_ip_cidr }}"
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
+
+    # =========================================================================
+    # PERSISTÊNCIA DE CONFIGURAÇÕES
+    # O módulo Junos faz commit automático, mas Cisco e Arista precisam de save
+    # =========================================================================
+    - name: "Cisco: Salvar 'Running-Config' na 'Startup-Config'"
+      cisco.ios.ios_config:
+        save_when: modified
+      when: ansible_network_os in ['ios', 'cisco.ios.ios']
+
+    - name: "Arista: Salvar 'Running-Config' na 'Startup-Config'"
+      arista.eos.eos_config:
+        save_when: modified
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
