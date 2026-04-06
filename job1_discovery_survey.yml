@@ -4,8 +4,9 @@
   gather_facts: no
   
   vars:
-    # No AAP 2.6, precisamos apontar explicitamente para o serviço 'controller'
-    aap_api_url: "https://192.168.15.200/api/controller"
+    # No AAP 2.6 com Gateway, o módulo acrescenta /api/v2/ automaticamente.
+    # Usar apenas o IP/Hostname raiz permite que o Gateway faça o roteamento correto.
+    aap_api_url: "https://192.168.15.200"
     aap_user: "admin"
     aap_pass: "redhat"
 
@@ -46,9 +47,9 @@
     # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA API AAP 2.6)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
-      awx.awx.job_template:
+      # Usamos a coleção moderna 'ansible.controller' para melhor suporte ao AAP 2.x
+      ansible.controller.job_template:
         name: "Provisioning Devices"
-        # O parâmetro controller_host agora recebe o path do gateway do 2.6
         controller_host: "{{ aap_api_url }}"
         controller_username: "{{ aap_user }}"
         controller_password: "{{ aap_pass }}"
