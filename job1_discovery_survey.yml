@@ -4,15 +4,6 @@
   hosts: all
   gather_facts: no
   
-  vars:
-    # =====================================================================
-    # CREDENCIAIS E URL DA API DO AAP
-    # =====================================================================
-    # O IP foi atualizado exatamente para o que você usa no browser!
-    api_url: "https://192.168.15.200"
-    api_user: "admin"
-    api_pass: "redhat"
-
   tasks:
     # =========================================================================
     # 0. TRAVA DE SEGURANÇA
@@ -88,20 +79,5 @@
               type: "text"
               required: true
               
-        # -------------------------------------------------------------
-        # CONEXÃO À API (Agora usando a variável fixa diretamente)
-        # -------------------------------------------------------------
-        controller_host: "{{ api_url }}"
-        controller_username: "{{ api_user }}"
-        controller_password: "{{ api_pass }}"
-        validate_certs: no
-
-      # -------------------------------------------------------------
-      # VARIÁVEIS DA TASK
-      # -------------------------------------------------------------
       delegate_to: localhost
       run_once: yes
-      
-      # Bypass de Proxy interno do podman/Kubernetes do AAP
-      environment:
-        no_proxy: "127.0.0.1,localhost,192.168.15.200"
