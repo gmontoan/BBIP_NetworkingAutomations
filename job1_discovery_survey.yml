@@ -2,17 +2,16 @@
 - name: "JOB 1: Discovery Focado (Host Único) e Mutação de Survey"
   hosts: all
   gather_facts: no
-  
+
   # -------------------------------------------------------------------------
-  # NOTA DE CONFIGURAÇÃO:
-  # Para este Job funcionar, deve anexar DUAS credenciais no AAP:
-  # 1. Credencial de REDE (SSH): Para logar nos routers (Cisco/Arista/Juniper).
-  # 2. Credencial de CONTROLLER: Para o Ansible conseguir alterar o Survey via API.
+  # NOTA DE EXECUÇÃO (AAP 2.6):
+  # Utilizamos o Token OAuth2 gerado manualmente para contornar o erro 404 
+  # do Gateway na fase de 'get token'.
   # -------------------------------------------------------------------------
 
   tasks:
     # -------------------------------------------------------------------------
-    # 1. SCRAPING DE INTERFACES (Login via Credencial de Rede do AAP)
+    # 1. SCRAPING DE INTERFACES (Cisco, Arista, Juniper)
     # -------------------------------------------------------------------------
     - name: "Cisco: Coletar Interfaces"
       cisco.ios.ios_facts:
@@ -44,36 +43,40 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (Login via Credencial de Controller do AAP)
+    # 3. ATUALIZAÇÃO DO SURVEY (Via Token OAuth2)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
       awx.awx.job_template:
         name: "Provisioning Devices"
-        # Usamos lookups de ambiente. O AAP injeta estes dados se a 
-        # credencial de "Ansible Controller" estiver anexada ao Job.
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default('https://192.168.15.200', true) }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('admin', true) }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default('redhat', true) }}"
+        # Configurações de Conexão com Token Direto
+        controller_host: "https://192.168.15.200"
+        controller_oauthtoken: "GFSZRmDUoQhNQijz3jTUp6nURS40uF"
         validate_certs: no
+        
         survey_enabled: yes
         survey_spec:
           name: "Provisioning Survey"
+          description: "Gerado dinamicamente para o host {{ inventory_hostname }}"
           spec:
             - question_name: "Equipamento Confirmado"
               variable: "survey_target_host"
               type: "text"
               default: "{{ inventory_hostname }}"
               required: true
+              
             - question_name: "Selecione a Interface Física"
               variable: "survey_interface"
               type: "multiplechoice"
               choices: "{{ filtered_interfaces | join('\n') }}"
               required: true
+              
             - question_name: "Configuração IPv4 (CIDR)"
               variable: "survey_ip_cidr"
               type: "text"
               required: true
       delegate_to: localhost
       run_once: yes
+      
+      # Garante que o tráfego não tenta sair por um proxy externo
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
