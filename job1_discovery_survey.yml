@@ -1,88 +1,74 @@
 ---
-- name: "JOB 1: Discovery Focado (Host Único) e Mutação de Survey"
-  # O AAP vai restringir isto através do "Limit" (Prompt on launch)
-  hosts: all
+- name: Estágio 1 - Discovery Focado e Mutação de Survey AAP
+  # Limitamos a execução estritamente ao equipamento alvo definido no Survey 1
+  hosts: "{{ target_hostname }}"
   gather_facts: no
-  
-  tasks:
-    # =========================================================================
-    # 0. TRAVA DE SEGURANÇA
-    # =========================================================================
-    - name: "Garantir que o Job 1 corre apenas num único Host"
-      ansible.builtin.fail:
-        msg: "ERRO: Este Job deve correr apenas num equipamento. Por favor, defina um único host no campo 'Limit' ao lançar o Job."
-      when: ansible_play_hosts | length > 1
-      run_once: yes
+  become: yes
+  become_method: enable
 
-    # =========================================================================
-    # 1. RECOLHA DE FACTS (FOCADO)
-    # =========================================================================
-    - name: "Cisco: Coletar Interfaces L3/L2"
+  tasks:
+    # ---------------------------------------------------------
+    # 1. COLETAR FACTS ESPECÍFICOS DO ALVO
+    # ---------------------------------------------------------
+    - name: Coletar Facts de Interfaces (Cisco IOS)
       cisco.ios.ios_facts:
         gather_subset: interfaces
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
-    - name: "Arista: Coletar Interfaces L3/L2"
-      arista.eos.eos_facts:
+    - name: Coletar Facts de Interfaces (Huawei CE/VRP)
+      community.network.ce_facts:
         gather_subset: interfaces
-      when: ansible_network_os in ['eos', 'arista.eos.eos']
+      when: ansible_network_os in ['ce', 'community.network.ce', 'huawei.vrp.vrp']
 
-    - name: "Juniper: Coletar Interfaces L3/L2"
-      junipernetworks.junos.junos_facts:
-        gather_subset: interfaces
-      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
-
-    # =========================================================================
-    # 2. FILTRAGEM (APENAS O NOME DA INTERFACE)
-    # =========================================================================
-    - name: "Extrair apenas interfaces físicas para o dropdown"
+    # ---------------------------------------------------------
+    # 2. PARSE E FILTRO EM MEMÓRIA (Otimização)
+    # ---------------------------------------------------------
+    - name: Extrair lista de interfaces do equipamento
       ansible.builtin.set_fact:
-        host_interfaces: >-
-          {% set result = [] %}
-          {% for intf in ansible_net_interfaces.keys() %}
-          {%   if not intf | regex_search('Loopback|Null|Vlan|irb|mgmt') %}
-          {%     set _ = result.append(intf) %}
-          {%   endif %}
-          {% endfor %}
-          {{ result | sort }}
-      when: ansible_net_interfaces is defined
+        # Extrai apenas as chaves (nomes das interfaces) do dicionário retornado
+        device_interfaces: "{{ ansible_net_interfaces.keys() | list | sort }}"
+      
+    - name: Opcional - Filtrar apenas interfaces físicas (ignorar Vlans/Loopbacks)
+      ansible.builtin.set_fact:
+        physical_interfaces: "{{ device_interfaces | reject('search', 'Vlan|Loopback|Null') | list }}"
 
-    # =========================================================================
-    # 3. MUTAÇÃO DO SURVEY (INJEÇÃO VIA API PARA O JOB 2)
-    # =========================================================================
-    - name: "Atualizar Survey do Job 2 com as interfaces do {{ inventory_hostname }}"
+    # ---------------------------------------------------------
+    # 3. MUTAÇÃO VIA API NO AAP (DELEGADO AO CONTROLLER)
+    # ---------------------------------------------------------
+    - name: Atualizar o Survey do Job de Execução (Job 2) via API
       awx.awx.job_template:
-        name: "Job 2 - Provisionamento InterOp" # Nome EXATO do seu Job 2 no AAP
-        survey_enabled: yes
+        name: "Job 2 - Execute L3 Provisioning" # O nome exato do seu Job de configuração
         survey_spec:
-          name: "Survey Dinamico"
-          description: "Interfaces validadas para o equipamento selecionado."
+          name: "L3 Provisioning Survey"
+          description: "Configuração de IP em interface L3"
           spec:
-            # Aproveitamos para passar o hostname de forma read-only (se suportado) ou apenas informativa
-            - question_name: "Host Alvo Configurado"
-              question_description: "O Job 1 preparou o Survey para este host."
-              variable: "survey_target_host"
+            # Reafirmamos o target_hostname para o Job 2 saber onde agir, 
+            # transformando-o num campo default read-only ou de confirmação
+            - question_name: "Equipamento Alvo"
+              question_description: "Equipamento preparado pelo Estágio 1"
+              variable: "target_hostname"
               type: "text"
               default: "{{ inventory_hostname }}"
               required: true
-              
+            
+            # O pulo do gato: o dropdown injetado em tempo real
             - question_name: "Selecione a Interface"
               question_description: "Interfaces físicas disponíveis no {{ inventory_hostname }}"
-              variable: "survey_interface"
+              variable: "target_interface"
               type: "multiplechoice"
-              # Injetamos a lista pura: eth1, eth2, etc.
-              choices: "{{ host_interfaces | join('\n') }}"
+              choices: "{{ physical_interfaces | join('\n') }}"
               required: true
-              
-            - question_name: "Endereço IP e Máscara (CIDR)"
-              question_description: "Ex: 10.0.0.1/30"
-              variable: "survey_ip_cidr"
+            
+            - question_name: "Endereço IPv4 (CIDR)"
+              question_description: "Ex: 192.168.10.1/30"
+              variable: "target_ip_cidr"
               type: "text"
               required: true
+      # Rodamos a mutação da API a partir do próprio servidor Ansible, não do Router
       delegate_to: localhost
       run_once: yes
-      environment:
-        CONTROLLER_HOST: "https://{{ lookup('env', 'CONTROLLER_HOST') | default(lookup('env', 'AWX_HOST'), true) }}"
-        CONTROLLER_USERNAME: "{{ lookup('env', 'CONTROLLER_USERNAME') | default(lookup('env', 'AWX_USERNAME'), true) }}"
-        CONTROLLER_PASSWORD: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default(lookup('env', 'AWX_PASSWORD'), true) }}"
-        CONTROLLER_VERIFY_SSL: "false"
+      # Configuração direta para a API do AAP (com fallback seguro para execução via CLI)
+      controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default('https://192.168.15.200', true) }}"
+      controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('admin', true) }}"
+      controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default('redhat', true) }}"
+      validate_certs: no
