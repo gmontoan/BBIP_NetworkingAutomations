@@ -4,6 +4,14 @@
   hosts: all
   gather_facts: no
   
+  vars:
+    # =====================================================================
+    # CREDENCIAIS E URL DA API DO AAP (EDITE AQUI SE NECESSÁRIO)
+    # =====================================================================
+    api_url: "https://192.168.15.200" # Substitua pelo URL exato que usa no browser
+    api_user: "admin"
+    api_pass: "redhat"
+
   tasks:
     # =========================================================================
     # 0. TRAVA DE SEGURANÇA
@@ -82,9 +90,9 @@
         # -------------------------------------------------------------
         # VARIÁVEIS DA API (Alinhadas corretamente DENTRO do módulo awx)
         # -------------------------------------------------------------
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default('https://192.168.15.200', true) }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('admin', true) }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default('redhat', true) }}"
+        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default(api_url, true) }}"
+        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default(api_user, true) }}"
+        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default(api_pass, true) }}"
         validate_certs: no
 
       # -------------------------------------------------------------
@@ -92,3 +100,7 @@
       # -------------------------------------------------------------
       delegate_to: localhost
       run_once: yes
+      
+      # Bypass de Proxy para evitar o Erro 404 local
+      environment:
+        no_proxy: "127.0.0.1,localhost,192.168.15.200"
