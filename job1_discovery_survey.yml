@@ -3,18 +3,16 @@
   hosts: all
   gather_facts: no
   
-  vars:
-    # =====================================================================
-    # CONFIGURAÇÃO DA API (VALIDADA COM API CATALOG AAP 2.6)
-    # =====================================================================
-    # No AAP 2.6, o Gateway roteia o tráfego do Controller via /api/controller
-    aap_api_url: "https://192.168.15.200"
-    aap_user: "admin"
-    aap_pass: "redhat"
+  # -------------------------------------------------------------------------
+  # NOTA DE CONFIGURAÇÃO:
+  # Para este Job funcionar, deve anexar DUAS credenciais no AAP:
+  # 1. Credencial de REDE (SSH): Para logar nos routers (Cisco/Arista/Juniper).
+  # 2. Credencial de CONTROLLER: Para o Ansible conseguir alterar o Survey via API.
+  # -------------------------------------------------------------------------
 
   tasks:
     # -------------------------------------------------------------------------
-    # 1. SCRAPING DE INTERFACES (Cisco, Arista, Juniper)
+    # 1. SCRAPING DE INTERFACES (Login via Credencial de Rede do AAP)
     # -------------------------------------------------------------------------
     - name: "Cisco: Coletar Interfaces"
       cisco.ios.ios_facts:
@@ -32,7 +30,7 @@
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # -------------------------------------------------------------------------
-    # 2. TRATAMENTO DE DADOS (Limpeza de interfaces lógicas)
+    # 2. TRATAMENTO DE DADOS
     # -------------------------------------------------------------------------
     - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
@@ -46,41 +44,36 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA GATEWAY AAP 2.6)
+    # 3. ATUALIZAÇÃO DO SURVEY (Login via Credencial de Controller do AAP)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
       awx.awx.job_template:
         name: "Provisioning Devices"
-        # O controller_host deve ser a raiz
-        controller_host: "{{ aap_api_url }}"
-        # O controller_api_path mapeia o prefixo do Gateway para o serviço Controller
-        controller_api_path: "/api/controller/v2" 
-        controller_username: "{{ aap_user }}"
-        controller_password: "{{ aap_pass }}"
+        # Usamos lookups de ambiente. O AAP injeta estes dados se a 
+        # credencial de "Ansible Controller" estiver anexada ao Job.
+        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default('https://192.168.15.200', true) }}"
+        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default('admin', true) }}"
+        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default('redhat', true) }}"
         validate_certs: no
         survey_enabled: yes
         survey_spec:
           name: "Provisioning Survey"
-          description: "Gerado dinamicamente para o host {{ inventory_hostname }}"
           spec:
             - question_name: "Equipamento Confirmado"
               variable: "survey_target_host"
               type: "text"
               default: "{{ inventory_hostname }}"
               required: true
-              
             - question_name: "Selecione a Interface Física"
               variable: "survey_interface"
               type: "multiplechoice"
               choices: "{{ filtered_interfaces | join('\n') }}"
               required: true
-              
             - question_name: "Configuração IPv4 (CIDR)"
               variable: "survey_ip_cidr"
               type: "text"
               required: true
       delegate_to: localhost
       run_once: yes
-      
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
