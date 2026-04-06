@@ -79,5 +79,17 @@
               type: "text"
               required: true
               
+        # -------------------------------------------------------------
+        # VARIÁVEIS DA API (Forçadas com IP real para ignorar o Podman/EE)
+        # -------------------------------------------------------------
+        controller_host: "https://192.168.15.200"
+        controller_username: "admin"
+        controller_password: "redhat"
+        validate_certs: no
+
       delegate_to: localhost
       run_once: yes
+      
+      # Forçamos o bypass do proxy no RHEL 9 para evitar possíveis erros HTTP 404/502
+      environment:
+        no_proxy: "127.0.0.1,localhost,192.168.15.200"
