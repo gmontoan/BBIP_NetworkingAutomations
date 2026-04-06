@@ -4,10 +4,10 @@
   gather_facts: no
 
   # -------------------------------------------------------------------------
-  # NOTA DE EXECUÇÃO (AAP 2.6):
-  # 1. O Token resolveu o erro de autenticação 404 inicial.
-  # 2. Voltamos ao Host sem o path '/api/controller' para evitar o erro de
-  #    caminho duplicado (/api/controller/api/v2/) detetado no log.
+  # NOTA TÉCNICA (AAP 2.6 - API GATEWAY):
+  # Confirmado que o endpoint correto é /api/controller/v2/.
+  # Usamos o módulo 'uri' com o Token OAuth2 para ignorar o redirecionamento
+  # do Gateway que causava o erro 404 nos módulos padrão.
   # -------------------------------------------------------------------------
 
   tasks:
@@ -44,18 +44,31 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (Via Token no IP Raiz)
+    # 3. ATUALIZAÇÃO DO SURVEY (Via API Gateway /api/controller/)
     # -------------------------------------------------------------------------
-    - name: "Injetar dados no Job 2 (Provisioning Devices)"
-      awx.awx.job_template:
-        name: "Provisioning Devices"
-        # Voltamos ao IP raiz. Com o Token, o módulo acerta no /api/v2/ correto.
-        controller_host: "https://192.168.15.200"
-        controller_oauthtoken: "GFSZRmDUoQhNQijz3jTUp6nURS40uF"
+    
+    # Passo A: Descobrir o ID do Job Template pelo Nome usando o Token
+    - name: "API: Localizar ID do Job Template 'Provisioning Devices'"
+      ansible.builtin.uri:
+        url: "https://192.168.15.200/api/controller/v2/job_templates/?name=Provisioning+Devices"
+        method: GET
+        headers:
+          Authorization: "Bearer GFSZRmDUoQhNQijz3jTUp6nURS40uF"
         validate_certs: no
-        
-        survey_enabled: yes
-        survey_spec:
+        status_code: 200
+      register: jt_lookup
+      delegate_to: localhost
+      run_once: yes
+
+    # Passo B: Injetar o novo Survey usando o ID encontrado
+    - name: "API: Atualizar Survey do Job 2"
+      ansible.builtin.uri:
+        url: "https://192.168.15.200/api/controller/v2/job_templates/{{ jt_lookup.json.results[0].id }}/survey_spec/"
+        method: POST
+        body_format: json
+        headers:
+          Authorization: "Bearer GFSZRmDUoQhNQijz3jTUp6nURS40uF"
+        body:
           name: "Provisioning Survey"
           description: "Gerado dinamicamente para o host {{ inventory_hostname }}"
           spec:
@@ -64,20 +77,22 @@
               type: "text"
               default: "{{ inventory_hostname }}"
               required: true
-              
             - question_name: "Selecione a Interface Física"
               variable: "survey_interface"
               type: "multiplechoice"
               choices: "{{ filtered_interfaces | join('\n') }}"
               required: true
-              
             - question_name: "Configuração IPv4 (CIDR)"
               variable: "survey_ip_cidr"
               type: "text"
               required: true
+        validate_certs: no
+        status_code: [200, 201]
       delegate_to: localhost
       run_once: yes
+      when: jt_lookup.json.count > 0
       
-      # Bypass de proxy para garantir que o tráfego bate no IP local corretamente
+      # Ambiente isolado: no_proxy evita que o contentor tente sair para a internet 
+      # para falar com o próprio host 192.168.15.200
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
