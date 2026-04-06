@@ -1,95 +1,82 @@
 ---
 - name: "JOB 1: Discovery Focado (Host Único) e Mutação de Survey"
-  # O AAP vai restringir isto através do "Limit" (Prompt on launch)
+  # O AAP restringe o alvo via campo 'Limit' (Prompt on launch)
   hosts: all
   gather_facts: no
   
-  tasks:
-    # =========================================================================
-    # 0. TRAVA DE SEGURANÇA
-    # =========================================================================
-    - name: "Garantir que o Job 1 corre apenas num único Host"
-      ansible.builtin.fail:
-        msg: "ERRO: Este Job deve correr apenas num equipamento. Por favor, defina um único host no campo 'Limit' ao lançar o Job."
-      when: ansible_play_hosts | length > 1
-      run_once: yes
+  vars:
+    # URL da API: Use o IP ou FQDN que você usa no browser para aceder ao AAP
+    aap_api_url: "https://192.168.15.200"
+    aap_user: "admin"
+    aap_pass: "redhat"
 
-    # =========================================================================
-    # 1. RECOLHA DE FACTS DE INTERFACES (SCRAPING)
-    # =========================================================================
-    - name: "Cisco: Coletar Interfaces L3/L2"
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. SCRAPING DE INTERFACES (Cisco, Arista, Juniper)
+    # -------------------------------------------------------------------------
+    - name: "Cisco: Coletar Interfaces"
       cisco.ios.ios_facts:
         gather_subset: interfaces
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
-    - name: "Arista: Coletar Interfaces L3/L2"
+    - name: "Arista: Coletar Interfaces"
       arista.eos.eos_facts:
         gather_subset: interfaces
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-    - name: "Juniper: Coletar Interfaces L3/L2"
+    - name: "Juniper: Coletar Interfaces"
       juniper.device.junos_facts:
         gather_subset: interfaces
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
-    # =========================================================================
-    # 2. FILTRAGEM E TRATAMENTO DOS DADOS NO ANSIBLE
-    # =========================================================================
-    - name: "Extrair apenas interfaces físicas para o dropdown"
+    # -------------------------------------------------------------------------
+    # 2. TRATAMENTO DE DADOS (Remover interfaces lógicas/gestão)
+    # -------------------------------------------------------------------------
+    - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
-        host_interfaces: >-
-          {% set result = [] %}
-          {% for intf in ansible_net_interfaces.keys() %}
-          {%   if not intf | regex_search('Loopback|Null|Vlan|irb|mgmt|Management') %}
-          {%     set _ = result.append(intf) %}
+        filtered_interfaces: >-
+          {% set list = [] %}
+          {% for i in ansible_net_interfaces.keys() %}
+          {%   if not i | regex_search('Vlan|Loopback|Null|mgmt|Management|irb') %}
+          {%     set _ = list.append(i) %}
           {%   endif %}
           {% endfor %}
-          {{ result | sort }}
-      when: ansible_net_interfaces is defined
+          {{ list | sort }}
 
-    # =========================================================================
-    # 3. MUTAÇÃO DO SURVEY (INJEÇÃO VIA API PARA O JOB 2)
-    # =========================================================================
-    - name: "Atualizar Survey do Job 2 com as interfaces do {{ inventory_hostname }}"
+    # -------------------------------------------------------------------------
+    # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA API)
+    # -------------------------------------------------------------------------
+    - name: "Injetar dados no Job 2 (Provisioning Devices)"
       awx.awx.job_template:
-        name: "Provisioning Devices" # NOME ATUALIZADO AQUI
+        name: "Provisioning Devices" # Nome exato do seu Job de destino
+        controller_host: "{{ aap_api_url }}"
+        controller_username: "{{ aap_user }}"
+        controller_password: "{{ aap_pass }}"
+        validate_certs: no
         survey_enabled: yes
         survey_spec:
-          name: "Survey Dinamico"
-          description: "Interfaces validadas para o equipamento selecionado."
+          name: "Provisioning Survey"
+          description: "Gerado dinamicamente para o host {{ inventory_hostname }}"
           spec:
-            - question_name: "Host Alvo Configurado"
-              question_description: "O Job 1 preparou o Survey para este host."
+            - question_name: "Equipamento Confirmado"
               variable: "survey_target_host"
               type: "text"
               default: "{{ inventory_hostname }}"
               required: true
               
-            - question_name: "Selecione a Interface"
-              question_description: "Interfaces físicas disponíveis no {{ inventory_hostname }}"
+            - question_name: "Selecione a Interface Física"
               variable: "survey_interface"
               type: "multiplechoice"
-              # Injetamos a lista pura formatada corretamente com quebras de linha
-              choices: "{{ host_interfaces | join('\n') }}"
+              choices: "{{ filtered_interfaces | join('\n') }}"
               required: true
               
-            - question_name: "Endereço IP e Máscara (CIDR)"
-              question_description: "Ex: 10.0.0.1/30"
+            - question_name: "Configuração IPv4 (CIDR)"
               variable: "survey_ip_cidr"
               type: "text"
               required: true
-              
-        # -------------------------------------------------------------
-        # VARIÁVEIS DA API (Forçadas com IP real para ignorar o Podman/EE)
-        # -------------------------------------------------------------
-        controller_host: "https://192.168.15.200"
-        controller_username: "admin"
-        controller_password: "redhat"
-        validate_certs: no
-
       delegate_to: localhost
       run_once: yes
       
-      # Forçamos o bypass do proxy no RHEL 9 para evitar possíveis erros HTTP 404/502
+      # Força a saída do tráfego do contentor para o host real
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
