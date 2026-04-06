@@ -1,0 +1,10 @@
+---
+collections:
+  # Coleção necessária para gerir o próprio AWX/Ansible Automation Platform via API
+  - name: awx.awx
+    version: '>=23.0.0'
+
+  # (Opcional, mas recomendado) Declarar as coleções de rede que o seu lab usa
+  - name: cisco.ios
+  - name: arista.eos
+  - name: junipernetworks.junos
