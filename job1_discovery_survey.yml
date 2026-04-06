@@ -5,9 +5,9 @@
 
   # -------------------------------------------------------------------------
   # NOTA DE EXECUÇÃO (AAP 2.6):
-  # No AAP 2.6, a API do Controller está atrás do Gateway no path /api/controller.
-  # Como a coleção awx.awx local é antiga, injetamos o path diretamente no host
-  # para que o módulo acerte no endpoint correto (/api/controller/api/v2/).
+  # 1. O Token resolveu o erro de autenticação 404 inicial.
+  # 2. Voltamos ao Host sem o path '/api/controller' para evitar o erro de
+  #    caminho duplicado (/api/controller/api/v2/) detetado no log.
   # -------------------------------------------------------------------------
 
   tasks:
@@ -44,13 +44,13 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (Ajuste de Path para AAP 2.6 Gateway)
+    # 3. ATUALIZAÇÃO DO SURVEY (Via Token no IP Raiz)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
       awx.awx.job_template:
         name: "Provisioning Devices"
-        # Ajuste Crítico: Incluímos /api/controller para o Gateway do 2.6 rotear o tráfego
-        controller_host: "https://192.168.15.200/api/controller"
+        # Voltamos ao IP raiz. Com o Token, o módulo acerta no /api/v2/ correto.
+        controller_host: "https://192.168.15.200"
         controller_oauthtoken: "GFSZRmDUoQhNQijz3jTUp6nURS40uF"
         validate_certs: no
         
