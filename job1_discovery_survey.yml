@@ -15,10 +15,15 @@
         gather_subset: interfaces
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
-    - name: Coletar Facts de Interfaces (Huawei CE/VRP)
-      community.network.ce_facts:
+    - name: Coletar Facts de Interfaces (Arista EOS)
+      arista.eos.eos_facts:
         gather_subset: interfaces
-      when: ansible_network_os in ['ce', 'community.network.ce', 'huawei.vrp.vrp']
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
+
+    - name: Coletar Facts de Interfaces (Juniper Junos)
+      juniper.device.junos_facts:
+        gather_subset: interfaces
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # ---------------------------------------------------------
     # 2. PARSE E FILTRO EM MEMÓRIA (Otimização)
@@ -30,7 +35,7 @@
       
     - name: Opcional - Filtrar apenas interfaces físicas (ignorar Vlans/Loopbacks)
       ansible.builtin.set_fact:
-        physical_interfaces: "{{ device_interfaces | reject('search', 'Vlan|Loopback|Null') | list }}"
+        physical_interfaces: "{{ device_interfaces | reject('search', 'Vlan|Loopback|Null|irb|mgmt|Management') | list }}"
 
     # ---------------------------------------------------------
     # 3. MUTAÇÃO VIA API NO AAP (DELEGADO AO CONTROLLER)
