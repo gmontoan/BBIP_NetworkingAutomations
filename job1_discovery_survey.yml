@@ -4,10 +4,9 @@
   gather_facts: no
 
   # -------------------------------------------------------------------------
-  # NOTA TÉCNICA (AAP 2.6 - API GATEWAY):
-  # Confirmado que o endpoint correto é /api/controller/v2/.
-  # Usamos o módulo 'uri' com o Token OAuth2 para ignorar o redirecionamento
-  # do Gateway que causava o erro 404 nos módulos padrão.
+  # CORREÇÃO: "Efeito Fatiador" (Letra por Linha)
+  # Para evitar que o Survey mostre '[', 'G', 'i'..., garantimos que a lista
+  # de interfaces seja convertida numa string limpa separada por \n
   # -------------------------------------------------------------------------
 
   tasks:
@@ -30,24 +29,22 @@
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # -------------------------------------------------------------------------
-    # 2. TRATAMENTO DE DADOS
+    # 2. TRATAMENTO DE DADOS (Agora com limpeza reforçada)
     # -------------------------------------------------------------------------
     - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
-        filtered_interfaces: >-
-          {% set list = [] %}
-          {% for i in ansible_net_interfaces.keys() %}
-          {%   if not i | regex_search('Vlan|Loopback|Null|mgmt|Management|irb') %}
-          {%     set _ = list.append(i) %}
-          {%   endif %}
-          {% endfor %}
-          {{ list | sort }}
+        # Criamos uma lista limpa e ordenada
+        interface_list: "{{ ansible_net_interfaces.keys() | reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard') | list | sort }}"
+
+    - name: "Gerar String para o Survey"
+      ansible.builtin.set_fact:
+        # O AAP espera as opções separadas por \n dentro de uma única string
+        survey_choices_string: "{{ interface_list | join('\n') }}"
 
     # -------------------------------------------------------------------------
     # 3. ATUALIZAÇÃO DO SURVEY (Via API Gateway /api/controller/)
     # -------------------------------------------------------------------------
     
-    # Passo A: Descobrir o ID do Job Template pelo Nome usando o Token
     - name: "API: Localizar ID do Job Template 'Provisioning Devices'"
       ansible.builtin.uri:
         url: "https://192.168.15.200/api/controller/v2/job_templates/?name=Provisioning+Devices"
@@ -60,7 +57,6 @@
       delegate_to: localhost
       run_once: yes
 
-    # Passo B: Injetar o novo Survey usando o ID encontrado
     - name: "API: Atualizar Survey do Job 2"
       ansible.builtin.uri:
         url: "https://192.168.15.200/api/controller/v2/job_templates/{{ jt_lookup.json.results[0].id }}/survey_spec/"
@@ -70,7 +66,7 @@
           Authorization: "Bearer GFSZRmDUoQhNQijz3jTUp6nURS40uF"
         body:
           name: "Provisioning Survey"
-          description: "Gerado dinamicamente para o host {{ inventory_hostname }}"
+          description: "Interfaces reais do {{ inventory_hostname }}"
           spec:
             - question_name: "Equipamento Confirmado"
               variable: "survey_target_host"
@@ -80,7 +76,8 @@
             - question_name: "Selecione a Interface Física"
               variable: "survey_interface"
               type: "multiplechoice"
-              choices: "{{ filtered_interfaces | join('\n') }}"
+              # USAMOS A STRING FORMATADA AQUI
+              choices: "{{ survey_choices_string }}"
               required: true
             - question_name: "Configuração IPv4 (CIDR)"
               variable: "survey_ip_cidr"
@@ -91,8 +88,5 @@
       delegate_to: localhost
       run_once: yes
       when: jt_lookup.json.count > 0
-      
-      # Ambiente isolado: no_proxy evita que o contentor tente sair para a internet 
-      # para falar com o próprio host 192.168.15.200
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
