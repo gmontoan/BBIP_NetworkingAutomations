@@ -6,9 +6,10 @@
   
   vars:
     # =====================================================================
-    # CREDENCIAIS E URL DA API DO AAP (EDITE AQUI SE NECESSÁRIO)
+    # CREDENCIAIS E URL DA API DO AAP
     # =====================================================================
-    api_url: "https://192.168.15.200" # Substitua pelo URL exato que usa no browser
+    # O IP foi atualizado exatamente para o que você usa no browser!
+    api_url: "https://192.168.15.200"
     api_user: "admin"
     api_pass: "redhat"
 
@@ -88,19 +89,19 @@
               required: true
               
         # -------------------------------------------------------------
-        # VARIÁVEIS DA API (Alinhadas corretamente DENTRO do módulo awx)
+        # CONEXÃO À API (Agora usando a variável fixa diretamente)
         # -------------------------------------------------------------
-        controller_host: "{{ lookup('env', 'CONTROLLER_HOST') | default(api_url, true) }}"
-        controller_username: "{{ lookup('env', 'CONTROLLER_USERNAME') | default(api_user, true) }}"
-        controller_password: "{{ lookup('env', 'CONTROLLER_PASSWORD') | default(api_pass, true) }}"
+        controller_host: "{{ api_url }}"
+        controller_username: "{{ api_user }}"
+        controller_password: "{{ api_pass }}"
         validate_certs: no
 
       # -------------------------------------------------------------
-      # VARIÁVEIS DA TASK (Alinhadas FORA do módulo awx, ao nível de 'name')
+      # VARIÁVEIS DA TASK
       # -------------------------------------------------------------
       delegate_to: localhost
       run_once: yes
       
-      # Bypass de Proxy para evitar o Erro 404 local
+      # Bypass de Proxy interno do podman/Kubernetes do AAP
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
