@@ -1,12 +1,11 @@
 ---
 - name: "JOB 1: Discovery Focado (Host Único) e Mutação de Survey"
-  # O AAP restringe o alvo via campo 'Limit' (Prompt on launch)
   hosts: all
   gather_facts: no
   
   vars:
-    # URL da API: Use o IP ou FQDN que você usa no browser para aceder ao AAP
-    aap_api_url: "https://192.168.15.200"
+    # No AAP 2.6, precisamos apontar explicitamente para o serviço 'controller'
+    aap_api_url: "https://192.168.15.200/api/controller"
     aap_user: "admin"
     aap_pass: "redhat"
 
@@ -30,7 +29,7 @@
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # -------------------------------------------------------------------------
-    # 2. TRATAMENTO DE DADOS (Remover interfaces lógicas/gestão)
+    # 2. TRATAMENTO DE DADOS
     # -------------------------------------------------------------------------
     - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
@@ -44,11 +43,12 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA API)
+    # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA API AAP 2.6)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
       awx.awx.job_template:
-        name: "Provisioning Devices" # Nome exato do seu Job de destino
+        name: "Provisioning Devices"
+        # O parâmetro controller_host agora recebe o path do gateway do 2.6
         controller_host: "{{ aap_api_url }}"
         controller_username: "{{ aap_user }}"
         controller_password: "{{ aap_pass }}"
@@ -77,6 +77,5 @@
       delegate_to: localhost
       run_once: yes
       
-      # Força a saída do tráfego do contentor para o host real
       environment:
         no_proxy: "127.0.0.1,localhost,192.168.15.200"
