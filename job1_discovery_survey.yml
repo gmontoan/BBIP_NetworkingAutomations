@@ -4,8 +4,10 @@
   gather_facts: no
   
   vars:
-    # No AAP 2.6 com Gateway, o módulo acrescenta /api/v2/ automaticamente.
-    # Usar apenas o IP/Hostname raiz permite que o Gateway faça o roteamento correto.
+    # =====================================================================
+    # CONFIGURAÇÃO DA API (VALIDADA COM API CATALOG AAP 2.6)
+    # =====================================================================
+    # No AAP 2.6, o Gateway roteia o tráfego do Controller via /api/controller
     aap_api_url: "https://192.168.15.200"
     aap_user: "admin"
     aap_pass: "redhat"
@@ -30,7 +32,7 @@
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # -------------------------------------------------------------------------
-    # 2. TRATAMENTO DE DADOS
+    # 2. TRATAMENTO DE DADOS (Limpeza de interfaces lógicas)
     # -------------------------------------------------------------------------
     - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
@@ -44,13 +46,15 @@
           {{ list | sort }}
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA API AAP 2.6)
+    # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA GATEWAY AAP 2.6)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
-      # Revertido para awx.awx devido à ausência da coleção ansible.controller no ambiente
       awx.awx.job_template:
         name: "Provisioning Devices"
+        # O controller_host deve ser a raiz
         controller_host: "{{ aap_api_url }}"
+        # O controller_api_path mapeia o prefixo do Gateway para o serviço Controller
+        controller_api_path: "/api/controller/v2" 
         controller_username: "{{ aap_user }}"
         controller_password: "{{ aap_pass }}"
         validate_certs: no
