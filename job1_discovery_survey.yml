@@ -47,8 +47,8 @@
     # 3. ATUALIZAÇÃO DO SURVEY (MUTAÇÃO VIA API AAP 2.6)
     # -------------------------------------------------------------------------
     - name: "Injetar dados no Job 2 (Provisioning Devices)"
-      # Usamos a coleção moderna 'ansible.controller' para melhor suporte ao AAP 2.x
-      ansible.controller.job_template:
+      # Revertido para awx.awx devido à ausência da coleção ansible.controller no ambiente
+      awx.awx.job_template:
         name: "Provisioning Devices"
         controller_host: "{{ aap_api_url }}"
         controller_username: "{{ aap_user }}"
