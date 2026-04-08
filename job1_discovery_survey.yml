@@ -31,7 +31,9 @@
           cisco.ios.ios_facts:
             gather_subset: interfaces
           vars:
-            # Resolve o erro 'kex error: no match for method kex algos'
+            # Força o uso do binário SSH para respeitar os argumentos de algoritmos legados
+            ansible_network_cli_ssh_type: ssh
+            # Resolve o erro 'kex error: no match for method kex algos' em equipamentos antigos
             ansible_ssh_common_args: >-
               -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
               -o HostKeyAlgorithms=+ssh-rsa
@@ -54,9 +56,9 @@
             ansible_port: 830
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
-        - name: "Juniper: Normalizar saída via Regex (Método Independente de Coleção)"
+        - name: "Juniper: Normalizar saída via Regex (Versão Ultra-Resiliente)"
           ansible.builtin.set_fact:
-            # Captura padrões de interfaces em qualquer lugar do XML (ge-, xe-, et-, eth, fxp)
+            # Extração agnóstica à estrutura XML para capturar ethX, ge-X/X/X, etc.
             ansible_net_interfaces: "{{ dict(found_names | zip([{} ] * (found_names | length))) }}"
           vars:
             found_names: "{{ (juniper_rpc_out.output | string) | regex_findall('(?i)(?:eth|ge-|xe-|et-|fxp|em)[0-9][0-9/.]*') | unique }}"
