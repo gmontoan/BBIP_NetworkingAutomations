@@ -11,7 +11,7 @@
 
   tasks:
     # -------------------------------------------------------------------------
-    # 1. VALIDAÇÃO DE CONECTIVIDADE
+    # 1. VALIDAÇÃO DE CONECTIVIDADE (Pre-flight Check)
     # -------------------------------------------------------------------------
     - name: "Check: Validar se a porta de gestão está aberta"
       ansible.builtin.wait_for:
@@ -27,12 +27,15 @@
     # -------------------------------------------------------------------------
     - name: "Recolha de Dados de Rede"
       block:
-        - name: "Cisco: Recolher Facts via CLI (Correção SSH Legado)"
+        - name: "Cisco: Recolher Facts via CLI (Suporte a SSH Legado)"
           cisco.ios.ios_facts:
             gather_subset: interfaces
           vars:
-            # Resolve o erro 'kex error: no match for method kex algos' em Cisco antigos
-            ansible_ssh_common_args: '-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa'
+            # Resolve o erro 'kex error: no match for method kex algos'
+            ansible_ssh_common_args: >-
+              -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
+              -o HostKeyAlgorithms=+ssh-rsa
+              -o PubkeyAcceptedAlgorithms=+ssh-rsa
           when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
         - name: "Arista: Recolher Facts via CLI"
@@ -51,11 +54,11 @@
             ansible_port: 830
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
-        - name: "Juniper: Normalizar saída via Regex (Versão Ultra-Resiliente)"
+        - name: "Juniper: Normalizar saída via Regex (Método Independente de Coleção)"
           ansible.builtin.set_fact:
+            # Captura padrões de interfaces em qualquer lugar do XML (ge-, xe-, et-, eth, fxp)
             ansible_net_interfaces: "{{ dict(found_names | zip([{} ] * (found_names | length))) }}"
           vars:
-            # Regex ultra-permissivo para capturar nomes de interfaces em containers ou hardware
             found_names: "{{ (juniper_rpc_out.output | string) | regex_findall('(?i)(?:eth|ge-|xe-|et-|fxp|em)[0-9][0-9/.]*') | unique }}"
           when: 
             - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
@@ -67,11 +70,11 @@
             msg: "Falha ao processar {{ inventory_hostname }}. Verifique a conectividade SSH/NETCONF."
 
     # -------------------------------------------------------------------------
-    # 3. TRATAMENTO E FILTRAGEM
+    # 3. TRATAMENTO E FILTRAGEM (Data Cleaning)
     # -------------------------------------------------------------------------
     - name: "Processar Interfaces"
       block:
-        - name: "Filtrar Interfaces Reais"
+        - name: "Filtrar Interfaces Reais/Físicas"
           ansible.builtin.set_fact:
             interface_list: >-
               {{ 
@@ -92,7 +95,7 @@
       when: ansible_net_interfaces is defined
 
     # -------------------------------------------------------------------------
-    # 4. ATUALIZAÇÃO DO CONTROLLER
+    # 4. ATUALIZAÇÃO DO CONTROLLER (AAP API)
     # -------------------------------------------------------------------------
     - name: "Sincronização com o Controller"
       block:
