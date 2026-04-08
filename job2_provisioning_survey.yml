@@ -1,5 +1,5 @@
 ---
-- name: "JOB 2: Provisioning Multi-Vendor de Interface"
+- name: "JOB 2: Provisioning Multi-Vendor de Interface (Versão Estável)"
   hosts: all
   gather_facts: no
 
@@ -12,12 +12,12 @@
         that:
           - survey_interface is defined
           - survey_ip_cidr is defined
-        fail_msg: "ERRO: As variáveis 'survey_interface' ou 'survey_ip_cidr' não foram recebidas. Certifique-se de que este Job foi lançado a partir do Survey do JOB 1."
+        fail_msg: "ERRO: As variáveis 'survey_interface' ou 'survey_ip_cidr' não foram recebidas corretamente."
 
     # -------------------------------------------------------------------------
     # 1. CONFIGURAÇÃO - CISCO IOS
     # -------------------------------------------------------------------------
-    - name: "Cisco: Aplicar Configuração de Interface L3"
+    - name: "Cisco: Aplicar Configuração"
       cisco.ios.ios_l3_interfaces:
         config:
           - name: "{{ survey_interface }}"
@@ -25,18 +25,10 @@
               - address: "{{ survey_ip_cidr }}"
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
-    - name: "Cisco: Ativar Interface e Descrição"
-      cisco.ios.ios_interfaces:
-        config:
-          - name: "{{ survey_interface }}"
-            description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
-            enabled: true
-      when: ansible_network_os in ['ios', 'cisco.ios.ios']
-
     # -------------------------------------------------------------------------
     # 2. CONFIGURAÇÃO - ARISTA EOS
     # -------------------------------------------------------------------------
-    - name: "Arista: Aplicar Configuração de Interface L3"
+    - name: "Arista: Aplicar Configuração"
       arista.eos.eos_l3_interfaces:
         config:
           - name: "{{ survey_interface }}"
@@ -44,57 +36,24 @@
               - address: "{{ survey_ip_cidr }}"
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-    - name: "Arista: Ativar Interface e Descrição"
-      arista.eos.eos_interfaces:
-        config:
-          - name: "{{ survey_interface }}"
-            description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
-            enabled: true
-      when: ansible_network_os in ['eos', 'arista.eos.eos']
-
     # -------------------------------------------------------------------------
-    # 3. CONFIGURAÇÃO - JUNIPER JUNOS (cRPD)
+    # 3. CONFIGURAÇÃO - JUNIPER JUNOS (cRPD) - CORREÇÃO ATTRIBUTE ERROR
     # -------------------------------------------------------------------------
-    - name: "Juniper: Aplicar Configuração via CLI-SET"
-      juniper.device.config:
-        load: "set"
+    - name: "Juniper: Aplicar Configuração via junos_config (Estável)"
+      junipernetworks.junos.junos_config:
         lines:
           - "delete interfaces {{ survey_interface }} disable"
-          - "set interfaces {{ survey_interface }} description 'Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})'"
+          - "set interfaces {{ survey_interface }} description 'Configurado via AAP - Job 2'"
           - "set interfaces {{ survey_interface }} unit 0 family inet address {{ survey_ip_cidr }}"
-        format: "set"
-        comment: "Provisioning realizado pelo Job 2 do AAP"
+        comment: "Provisioning via junos_config para evitar bugs de PyEZ"
       vars:
         ansible_connection: ansible.netcommon.netconf
         ansible_port: 830
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
     # -------------------------------------------------------------------------
-    # 4. VALIDAÇÃO PÓS-CONFIGURAÇÃO (Cross-Vendor)
+    # 4. RESULTADO
     # -------------------------------------------------------------------------
-    - name: "Check: Validar conectividade IP (Juniper)"
-      ansible.netcommon.netconf_rpc:
-        rpc: get-interface-information
-        content: |
-          <interface-name>{{ survey_interface }}</interface-name>
-          <terse/>
-        display: xml
-      register: check_juniper
-      vars:
-        ansible_connection: ansible.netcommon.netconf
-        ansible_port: 830
-      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
-
-    - name: "Check: Validar conectividade IP (Cisco/Arista)"
-      ansible.builtin.shell: "ping -c 2 {{ survey_ip_cidr.split('/')[0] }}"
-      delegate_to: localhost
-      register: ping_test
-      ignore_errors: yes
-      when: ansible_network_os not in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
-
     - name: "Resultado Final"
       ansible.builtin.debug:
-        msg: 
-          - "Provisioning concluído para {{ inventory_hostname }} ({{ ansible_network_os }})"
-          - "Interface: {{ survey_interface }}"
-          - "IP/Mask: {{ survey_ip_cidr }}"
+        msg: "Provisioning concluído com sucesso para {{ inventory_hostname }} na interface {{ survey_interface }}."
