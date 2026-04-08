@@ -18,8 +18,8 @@
       ansible.builtin.wait_for:
         host: "{{ inventory_hostname }}"
         port: "{{ (ansible_network_os is search('junos')) | ternary(830, 22) }}"
-        timeout: 8
-        msg: "O dispositivo não responde na porta de gestão correta."
+        timeout: 10
+        msg: "O dispositivo {{ inventory_hostname }} não responde na porta de gestão correta."
       register: connectivity_check
       ignore_errors: yes
 
@@ -38,19 +38,28 @@
             gather_subset: interfaces
           when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-        - name: "Juniper: Recolher Facts via NETCONF"
+        - name: "Juniper: Recolher Facts via NETCONF (Modo Estável)"
           juniper.device.facts:
+            host: "{{ inventory_hostname }}"
+            user: "{{ ansible_user }}"
+            passwd: "{{ ansible_password | default(ansible_ssh_pass) }}"
+            port: 830
             config_format: xml
-          vars:
-            ansible_connection: ansible.netcommon.netconf
-            ansible_port: 830
-            ansible_netconf_look_for_keys: false
+          register: juniper_out
+          delegate_to: localhost
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
+
+        - name: "Juniper: Normalizar dados de interface"
+          ansible.builtin.set_fact:
+            ansible_net_interfaces: "{{ juniper_out.facts.interface_info }}"
+          when: 
+            - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
+            - juniper_out.facts is defined
 
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique as credenciais no AAP."
+            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique se as credenciais no AAP estão corretas."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
@@ -70,7 +79,7 @@
         - name: "Validar Resultado"
           ansible.builtin.assert:
             that: interface_list | length > 0
-            fail_msg: "Nenhuma interface física disponível em {{ inventory_hostname }}."
+            fail_msg: "Nenhuma interface física válida disponível em {{ inventory_hostname }}."
 
         - name: "Preparar Opções do Survey"
           ansible.builtin.set_fact:
@@ -100,14 +109,14 @@
               Authorization: "Bearer {{ auth_token }}"
             body:
               name: "Provisioning Survey"
-              description: "Discovery automático para {{ inventory_hostname }}"
+              description: "Discovery automático para {{ inventory_hostname }} ({{ ansible_network_os }})"
               spec:
                 - question_name: "Confirmar Equipamento"
                   variable: "survey_target_host"
                   type: "text"
                   default: "{{ inventory_hostname }}"
                   required: true
-                - question_name: "Escolha a Interface"
+                - question_name: "Escolha a Interface Física"
                   variable: "survey_interface"
                   type: "multiplechoice"
                   choices: "{{ survey_choices }}"
