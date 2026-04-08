@@ -38,12 +38,11 @@
           when: ansible_network_os in ['eos', 'arista.eos.eos']
 
         - name: "Juniper (cRPD): Recolher Interfaces via RPC NETCONF"
-          ansible.netcommon.netconf_get:
-            source: running
-            filter: |
-              <get-interface-information>
-                <terse/>
-              </get-interface-information>
+          ansible.netcommon.netconf_rpc:
+            rpc: get-interface-information
+            # O cRPD aceita argumentos via dicionário no netconf_rpc
+            content:
+              terse: true
             display: xml
           register: juniper_rpc_out
           vars:
@@ -56,8 +55,12 @@
             ansible_net_interfaces: >-
               {% set interfaces = {} %}
               {% set xml_data = juniper_rpc_out.output | community.general.xml_to_dict %}
-              {% for item in xml_data['get-interface-information']['physical-interface'] %}
-                {% if item['name'] is string %}
+              {# O caminho do dicionário varia conforme o retorno do RPC #}
+              {% set base_path = xml_data.get('rpc-reply', {}).get('interface-information', {}).get('physical-interface', []) %}
+              {# Garantir que base_path seja uma lista para o loop #}
+              {% set interface_list_raw = [base_path] if base_path is mapping else base_path %}
+              {% for item in interface_list_raw %}
+                {% if item.get('name') is defined %}
                   {% set _ = interfaces.update({item['name']: {}}) %}
                 {% endif %}
               {% endfor %}
@@ -69,7 +72,7 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. O cRPD pode não suportar o comando de Facts padrão."
+            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique se o serviço NETCONF está ativo."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
