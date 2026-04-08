@@ -73,6 +73,7 @@
         update: merge
         lines:
           - "delete interfaces {{ survey_interface }} disable"
+          - "delete interfaces {{ survey_interface }} unit 0 family inet"
           - "set interfaces {{ survey_interface }} description \"Configurado por AAP Job 2\""
           - "set interfaces {{ survey_interface }} unit 0 family inet address {{ survey_ip_cidr }}"
       vars:
