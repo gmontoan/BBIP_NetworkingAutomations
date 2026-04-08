@@ -37,15 +37,15 @@
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
     # -------------------------------------------------------------------------
-    # 3. CONFIGURAÇÃO - JUNIPER JUNOS (cRPD) - CORREÇÃO ATTRIBUTE ERROR
+    # 3. CONFIGURAÇÃO - JUNIPER JUNOS (cRPD) - CORREÇÃO SYNTAX ERROR
     # -------------------------------------------------------------------------
     - name: "Juniper: Aplicar Configuração via junos_config (Estável)"
       junipernetworks.junos.junos_config:
+        update: merge
         lines:
           - "delete interfaces {{ survey_interface }} disable"
-          - "set interfaces {{ survey_interface }} description 'Configurado via AAP - Job 2'"
+          - "set interfaces {{ survey_interface }} description \"Configurado por AAP Job 2\""
           - "set interfaces {{ survey_interface }} unit 0 family inet address {{ survey_ip_cidr }}"
-        comment: "Provisioning via junos_config para evitar bugs de PyEZ"
       vars:
         ansible_connection: ansible.netcommon.netconf
         ansible_port: 830
