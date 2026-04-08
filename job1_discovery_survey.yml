@@ -2,7 +2,6 @@
 - name: "JOB 1: Discovery Robusto e Mutação Dinâmica de Survey"
   hosts: all
   gather_facts: no
-  connection: local
 
   vars:
     # Configurações do Controller
@@ -22,6 +21,7 @@
         msg: "O dispositivo {{ inventory_hostname }} não responde na porta de gestão correta."
       register: connectivity_check
       ignore_errors: yes
+      delegate_to: localhost
 
     # -------------------------------------------------------------------------
     # 2. RECOLHA DE DADOS (Scraping Multi-Vendor)
@@ -38,28 +38,21 @@
             gather_subset: interfaces
           when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-        - name: "Juniper: Recolher Facts via NETCONF (Modo Estável)"
+        - name: "Juniper: Recolher Facts via NETCONF"
           juniper.device.facts:
-            host: "{{ inventory_hostname }}"
-            user: "{{ ansible_user }}"
-            passwd: "{{ ansible_password | default(ansible_ssh_pass) }}"
-            port: 830
             config_format: xml
-          register: juniper_out
-          delegate_to: localhost
+          vars:
+            # Usamos a conexão nativa para que o AAP injete as credenciais automaticamente
+            ansible_connection: ansible.netcommon.netconf
+            ansible_port: 830
+            # IMPORTANTE: Força o uso de password e ignora chaves SSH do ambiente
+            ansible_netconf_look_for_keys: false
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
-
-        - name: "Juniper: Normalizar dados de interface"
-          ansible.builtin.set_fact:
-            ansible_net_interfaces: "{{ juniper_out.facts.interface_info }}"
-          when: 
-            - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
-            - juniper_out.facts is defined
 
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique se as credenciais no AAP estão corretas."
+            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique se a porta 830 (Juniper) ou 22 (Cisco/Arista) está acessível."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
@@ -99,6 +92,7 @@
               Authorization: "Bearer {{ auth_token }}"
             validate_certs: no
           register: jt_search
+          delegate_to: localhost
 
         - name: "API: Atualizar Survey Spec"
           ansible.builtin.uri:
@@ -126,9 +120,9 @@
                   type: "text"
                   required: true
             status_code: [200, 201]
+          delegate_to: localhost
           when: jt_search.json.count > 0
           environment:
             no_proxy: "127.0.0.1,localhost,{{ controller_api_url | urlsplit('hostname') }}"
-      delegate_to: localhost
       run_once: yes
       when: survey_choices is defined
