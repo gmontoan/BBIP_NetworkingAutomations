@@ -1,13 +1,8 @@
 ---
 collections:
-  # Coleção para gerir o AWX/Controller via API
   - name: awx.awx
     version: '>=23.0.0'
-
-  # Coleções de rede para o seu lab
   - name: cisco.ios
   - name: arista.eos
-  
-  # Recomendado: Usar a collection moderna da Juniper
-  - name: juniper.device
-  - name: ansible.netcommon
+  # Devolvendo a collection legacy para o SSH Puro funcionar
+  - name: junipernetworks.junos
