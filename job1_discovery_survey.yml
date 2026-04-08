@@ -3,11 +3,6 @@
   hosts: all
   gather_facts: no
 
-  # -------------------------------------------------------------------------
-  # OBJETIVO: Coletar interfaces de Cisco, Arista ou Juniper via SSH puro
-  # e atualizar o Survey de um segundo Job Template no Controller.
-  # -------------------------------------------------------------------------
-
   tasks:
     # -------------------------------------------------------------------------
     # 1. SCRAPING DE INTERFACES (Cisco, Arista, Juniper)
@@ -23,7 +18,6 @@
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
     - name: "Juniper: Coletar Interfaces (SSH Puro)"
-      # Usando junos_facts para evitar a dependência da biblioteca ncclient
       junipernetworks.junos.junos_facts:
         gather_subset: interfaces
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
@@ -33,18 +27,15 @@
     # -------------------------------------------------------------------------
     - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
-        # Filtra tipos de interface que não queremos no Survey
         interface_list: "{{ ansible_net_interfaces.keys() | reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard') | list | sort }}"
 
     - name: "Gerar String para o Survey"
       ansible.builtin.set_fact:
-        # Formata a lista para o padrão de múltiplas escolhas do Controller (\n)
         survey_choices_string: "{{ interface_list | join('\n') }}"
 
     # -------------------------------------------------------------------------
-    # 3. ATUALIZAÇÃO DO SURVEY (Via API do Controller)
+    # 3. ATUALIZAÇÃO DO SURVEY (Via API Gateway /api/controller/)
     # -------------------------------------------------------------------------
-    
     - name: "API: Localizar ID do Job Template 'Provisioning Devices'"
       ansible.builtin.uri:
         url: "https://192.168.15.200/api/controller/v2/job_templates/?name=Provisioning+Devices"
@@ -72,4 +63,20 @@
               variable: "survey_target_host"
               type: "text"
               default: "{{ inventory_hostname }}"
-              required
+              required: true  # CORRIGIDO: Adicionado o ': true' que faltava
+            - question_name: "Selecione a Interface Física"
+              variable: "survey_interface"
+              type: "multiplechoice"
+              choices: "{{ survey_choices_string }}"
+              required: true
+            - question_name: "Configuração IPv4 (CIDR)"
+              variable: "survey_ip_cidr"
+              type: "text"
+              required: true
+        validate_certs: no
+        status_code: [200, 201]
+      delegate_to: localhost
+      run_once: yes
+      when: jt_lookup.json.count > 0
+      environment:
+        no_proxy: "127.0.0.1,localhost,192.168.15.200"
