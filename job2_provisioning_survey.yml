@@ -1,5 +1,5 @@
 ---
-- name: "JOB 2: Provisioning Multi-Vendor de Interface (Versão Estável)"
+- name: "JOB 2: Provisioning Multi-Vendor de Interface"
   hosts: all
   gather_facts: no
 
@@ -12,23 +12,35 @@
         that:
           - survey_interface is defined
           - survey_ip_cidr is defined
-        fail_msg: "ERRO: As variáveis 'survey_interface' ou 'survey_ip_cidr' não foram recebidas corretamente."
+        fail_msg: "ERRO: As variáveis do Survey não foram recebidas. Certifique-se de preencher o formulário no AAP."
 
     # -------------------------------------------------------------------------
-    # 1. CONFIGURAÇÃO - CISCO IOS
+    # 1. CONFIGURAÇÃO - CISCO IOS (Suporte a SSH Legado)
     # -------------------------------------------------------------------------
-    - name: "Cisco: Aplicar Configuração"
+    - name: "Cisco: Aplicar Configuração de Interface L3"
       cisco.ios.ios_l3_interfaces:
         config:
           - name: "{{ survey_interface }}"
             ipv4:
               - address: "{{ survey_ip_cidr }}"
+      vars:
+        ansible_ssh_common_args: '-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa'
+      when: ansible_network_os in ['ios', 'cisco.ios.ios']
+
+    - name: "Cisco: Ativar Interface e Descrição"
+      cisco.ios.ios_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
+            enabled: true
+      vars:
+        ansible_ssh_common_args: '-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa'
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
     # -------------------------------------------------------------------------
     # 2. CONFIGURAÇÃO - ARISTA EOS
     # -------------------------------------------------------------------------
-    - name: "Arista: Aplicar Configuração"
+    - name: "Arista: Aplicar Configuração de Interface L3"
       arista.eos.eos_l3_interfaces:
         config:
           - name: "{{ survey_interface }}"
@@ -36,8 +48,16 @@
               - address: "{{ survey_ip_cidr }}"
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
+    - name: "Arista: Ativar Interface e Descrição"
+      arista.eos.eos_interfaces:
+        config:
+          - name: "{{ survey_interface }}"
+            description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
+            enabled: true
+      when: ansible_network_os in ['eos', 'arista.eos.eos']
+
     # -------------------------------------------------------------------------
-    # 3. CONFIGURAÇÃO - JUNIPER JUNOS (cRPD) - CORREÇÃO SYNTAX ERROR
+    # 3. CONFIGURAÇÃO - JUNIPER JUNOS (cRPD)
     # -------------------------------------------------------------------------
     - name: "Juniper: Aplicar Configuração via junos_config (Estável)"
       junipernetworks.junos.junos_config:
@@ -52,8 +72,11 @@
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
     # -------------------------------------------------------------------------
-    # 4. RESULTADO
+    # 4. RESULTADO FINAL
     # -------------------------------------------------------------------------
-    - name: "Resultado Final"
+    - name: "Resultado do Provisioning"
       ansible.builtin.debug:
-        msg: "Provisioning concluído com sucesso para {{ inventory_hostname }} na interface {{ survey_interface }}."
+        msg: 
+          - "Sucesso: {{ inventory_hostname }} configurado."
+          - "Interface: {{ survey_interface }}"
+          - "Endereço: {{ survey_ip_cidr }}"
