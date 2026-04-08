@@ -27,9 +27,12 @@
     # -------------------------------------------------------------------------
     - name: "Recolha de Dados de Rede"
       block:
-        - name: "Cisco: Recolher Facts via CLI"
+        - name: "Cisco: Recolher Facts via CLI (Correção SSH Legado)"
           cisco.ios.ios_facts:
             gather_subset: interfaces
+          vars:
+            # Resolve o erro 'kex error: no match for method kex algos' em Cisco antigos
+            ansible_ssh_common_args: '-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa'
           when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
         - name: "Arista: Recolher Facts via CLI"
@@ -52,6 +55,7 @@
           ansible.builtin.set_fact:
             ansible_net_interfaces: "{{ dict(found_names | zip([{} ] * (found_names | length))) }}"
           vars:
+            # Regex ultra-permissivo para capturar nomes de interfaces em containers ou hardware
             found_names: "{{ (juniper_rpc_out.output | string) | regex_findall('(?i)(?:eth|ge-|xe-|et-|fxp|em)[0-9][0-9/.]*') | unique }}"
           when: 
             - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
@@ -60,17 +64,13 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha ao processar {{ inventory_hostname }}. Verifique a conectividade NETCONF."
+            msg: "Falha ao processar {{ inventory_hostname }}. Verifique a conectividade SSH/NETCONF."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM
     # -------------------------------------------------------------------------
     - name: "Processar Interfaces"
       block:
-        - name: "Debug: Verificação de Segurança (Interfaces Brutas)"
-          ansible.builtin.debug:
-            msg: "Interfaces encontradas: {{ ansible_net_interfaces.keys() | list }}"
-
         - name: "Filtrar Interfaces Reais"
           ansible.builtin.set_fact:
             interface_list: >-
@@ -84,7 +84,7 @@
         - name: "Validar Resultado"
           ansible.builtin.assert:
             that: interface_list | length > 0
-            fail_msg: "Filtro resultou em zero. Interfaces brutas detetadas: {{ ansible_net_interfaces.keys() | list }}"
+            fail_msg: "Nenhuma interface válida encontrada em {{ inventory_hostname }}."
 
         - name: "Preparar Opções do Survey"
           ansible.builtin.set_fact:
@@ -116,7 +116,7 @@
             validate_certs: no
             body:
               name: "Provisioning Survey"
-              description: "Discovery automático para {{ inventory_hostname }} em {{ now(fmt='%Y-%m-%d %H:%M:%S') }}"
+              description: "Discovery automático em {{ now(fmt='%Y-%m-%d %H:%M:%S') }}"
               spec:
                 - question_name: "Confirmar Equipamento"
                   variable: "survey_target_host"
