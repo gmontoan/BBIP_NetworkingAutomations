@@ -17,9 +17,11 @@
         gather_subset: interfaces
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-    - name: "Juniper: Coletar Interfaces (SSH Puro)"
+    - name: "Juniper: Coletar Interfaces"
       junipernetworks.junos.junos_facts:
         gather_subset: interfaces
+      # Força a conexão local apenas para o Juniper, contornando o erro do network_cli
+      connection: local
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # -------------------------------------------------------------------------
