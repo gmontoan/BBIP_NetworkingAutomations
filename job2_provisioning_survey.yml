@@ -24,6 +24,8 @@
             ipv4:
               - address: "{{ survey_ip_cidr }}"
       vars:
+        # Força o uso do binário SSH para respeitar os argumentos de algoritmos legados
+        ansible_network_cli_ssh_type: ssh
         # Resolve 'kex error': Aceita algoritmos legados (DH Group 14, Group 1, etc.)
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
@@ -38,6 +40,7 @@
             description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
             enabled: true
       vars:
+        ansible_network_cli_ssh_type: ssh
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
           -o HostKeyAlgorithms=+ssh-rsa
