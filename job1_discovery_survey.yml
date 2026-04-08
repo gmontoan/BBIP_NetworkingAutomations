@@ -18,7 +18,6 @@
         host: "{{ inventory_hostname }}"
         port: "{{ (ansible_network_os is search('junos')) | ternary(830, 22) }}"
         timeout: 10
-        msg: "O dispositivo {{ inventory_hostname }} não responde na porta de gestão correta."
       register: connectivity_check
       ignore_errors: yes
       delegate_to: localhost
@@ -38,21 +37,18 @@
             gather_subset: interfaces
           when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-        - name: "Juniper: Recolher Facts via NETCONF"
-          juniper.device.facts:
-            config_format: xml
+        - name: "Juniper: Recolher Facts via NETCONF (Versão Estável)"
+          junipernetworks.junos.junos_facts:
+            gather_subset: interfaces
           vars:
-            # Usamos a conexão nativa para que o AAP injete as credenciais automaticamente
             ansible_connection: ansible.netcommon.netconf
             ansible_port: 830
-            # IMPORTANTE: Força o uso de password e ignora chaves SSH do ambiente
-            ansible_netconf_look_for_keys: false
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique se a porta 830 (Juniper) ou 22 (Cisco/Arista) está acessível."
+            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique as credenciais no AAP."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
@@ -64,7 +60,7 @@
             interface_list: >-
               {{ 
                 ansible_net_interfaces.keys() | 
-                select('match', '^(Eth|Gi|Fa|Te|Po|ge-|xe-|et-)[0-9/.]+$') | 
+                select('match', '^(Eth|Gi|Fa|Te|Po|ge-|xe-|et-).*') | 
                 reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local') | 
                 list | sort 
               }}
