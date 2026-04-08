@@ -21,9 +21,15 @@
       juniper.device.facts:
         config_format: xml
       vars:
-        # Usamos netconf com a nova imagem, evitando o erro de injeção de provider
+        # Força o NETCONF e o sistema operativo correto
         ansible_connection: ansible.netcommon.netconf
+        ansible_network_os: junos
         ansible_port: 830
+        # Mapeia explicitamente as credenciais injetadas pelo AAP
+        ansible_user: "{{ ansible_user | default(omit) }}"
+        ansible_password: "{{ ansible_password | default(ansible_ssh_pass | default(omit)) }}"
+        # Previne que o ncclient tente usar chaves SSH, forçando a palavra-passe
+        ansible_netconf_look_for_keys: false
       when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
     # -------------------------------------------------------------------------
