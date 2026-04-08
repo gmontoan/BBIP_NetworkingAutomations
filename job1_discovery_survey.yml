@@ -1,49 +1,139 @@
 ---
-- name: "JOB 2: Provisioning de Interface no Juniper cRPD"
+- name: "JOB 1: Discovery Robusto e Mutação Dinâmica de Survey"
   hosts: all
   gather_facts: no
 
-  # As variáveis 'survey_interface' e 'survey_ip_cidr' vêm do Survey do Job 1
+  vars:
+    # Configurações do Controller
+    controller_api_url: "https://192.168.15.200/api/controller/v2"
+    target_jt_name: "Provisioning Devices"
+    auth_token: "GFSZRmDUoQhNQijz3jTUp6nURS40uF"
+
   tasks:
     # -------------------------------------------------------------------------
-    # 1. CONFIGURAÇÃO VIA CLI-SET (Método mais estável para cRPD)
+    # 1. VALIDAÇÃO DE CONECTIVIDADE
     # -------------------------------------------------------------------------
-    - name: "Juniper: Aplicar Configuração de Interface"
-      juniper.device.config:
-        load: "set"
-        lines:
-          - "delete interfaces {{ survey_interface }} disable"
-          - "set interfaces {{ survey_interface }} description 'Configurado via AAP - Job 2'"
-          - "set interfaces {{ survey_interface }} mtu 1500"
-          - "set interfaces {{ survey_interface }} unit 0 family inet address {{ survey_ip_cidr }}"
-        format: "set"
-        # O 'commit' no cRPD é imediato, mas garantimos a persistência
-        comment: "Provisioning realizado pelo utilizador ansible"
-      vars:
-        ansible_connection: ansible.netcommon.netconf
-        ansible_port: 830
-      register: config_result
+    - name: "Check: Validar se a porta de gestão está aberta"
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ (ansible_network_os is search('junos')) | ternary(830, 22) }}"
+        timeout: 10
+      register: connectivity_check
+      ignore_errors: yes
+      delegate_to: localhost
 
     # -------------------------------------------------------------------------
-    # 2. VALIDAÇÃO PÓS-CONFIGURAÇÃO
+    # 2. RECOLHA DE DADOS (Scraping Multi-Vendor)
     # -------------------------------------------------------------------------
-    - name: "Verificar Estado da Interface"
-      ansible.netcommon.netconf_rpc:
-        rpc: get-interface-information
-        content: |
-          <interface-name>{{ survey_interface }}</interface-name>
-          <terse/>
-        display: xml
-      register: check_interface
-      vars:
-        ansible_connection: ansible.netcommon.netconf
-        ansible_port: 830
+    - name: "Recolha de Dados de Rede"
+      block:
+        - name: "Cisco: Recolher Facts via CLI"
+          cisco.ios.ios_facts:
+            gather_subset: interfaces
+          when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
-    - name: "Confirmar IP atribuído"
-      ansible.builtin.assert:
-        that: "survey_ip_cidr.split('/')[0] in check_interface.output"
-        fail_msg: "O endereço IP não foi detetado na interface após o commit."
+        - name: "Arista: Recolher Facts via CLI"
+          arista.eos.eos_facts:
+            gather_subset: interfaces
+          when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-    - name: "Resultado Final"
-      ansible.builtin.debug:
-        msg: "Interface {{ survey_interface }} configurada com sucesso em {{ inventory_hostname }}."
+        - name: "Juniper (cRPD): Recolher Interfaces via RPC NETCONF"
+          ansible.netcommon.netconf_rpc:
+            rpc: get-interface-information
+            content: "<terse/>"
+            display: xml
+          register: juniper_rpc_out
+          vars:
+            ansible_connection: ansible.netcommon.netconf
+            ansible_port: 830
+          when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
+
+        - name: "Juniper: Normalizar saída via Regex (Versão Ultra-Resiliente)"
+          ansible.builtin.set_fact:
+            ansible_net_interfaces: "{{ dict(found_names | zip([{} ] * (found_names | length))) }}"
+          vars:
+            found_names: "{{ (juniper_rpc_out.output | string) | regex_findall('(?i)(?:eth|ge-|xe-|et-|fxp|em)[0-9][0-9/.]*') | unique }}"
+          when: 
+            - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
+            - juniper_rpc_out.output is defined
+
+      rescue:
+        - name: "Erro: Falha na recolha de facts"
+          ansible.builtin.debug:
+            msg: "Falha ao processar {{ inventory_hostname }}. Verifique a conectividade NETCONF."
+
+    # -------------------------------------------------------------------------
+    # 3. TRATAMENTO E FILTRAGEM
+    # -------------------------------------------------------------------------
+    - name: "Processar Interfaces"
+      block:
+        - name: "Debug: Verificação de Segurança (Interfaces Brutas)"
+          ansible.builtin.debug:
+            msg: "Interfaces encontradas: {{ ansible_net_interfaces.keys() | list }}"
+
+        - name: "Filtrar Interfaces Reais"
+          ansible.builtin.set_fact:
+            interface_list: >-
+              {{ 
+                ansible_net_interfaces.keys() | 
+                select('match', '(?i)^(eth|ge-|xe-|et-|Gi|Fa|Te|Eth|Po).*') | 
+                reject('search', '(?i)Vlan|Loop|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap|fxp') | 
+                list | sort 
+              }}
+
+        - name: "Validar Resultado"
+          ansible.builtin.assert:
+            that: interface_list | length > 0
+            fail_msg: "Filtro resultou em zero. Interfaces brutas detetadas: {{ ansible_net_interfaces.keys() | list }}"
+
+        - name: "Preparar Opções do Survey"
+          ansible.builtin.set_fact:
+            survey_choices: "{{ interface_list | join('\n') }}"
+      when: ansible_net_interfaces is defined
+
+    # -------------------------------------------------------------------------
+    # 4. ATUALIZAÇÃO DO CONTROLLER
+    # -------------------------------------------------------------------------
+    - name: "Sincronização com o Controller"
+      block:
+        - name: "API: Localizar Job Template"
+          ansible.builtin.uri:
+            url: "{{ controller_api_url }}/job_templates/?name={{ target_jt_name | urlencode }}"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ auth_token }}"
+            validate_certs: no
+          register: jt_search
+          delegate_to: localhost
+
+        - name: "API: Atualizar Survey Spec"
+          ansible.builtin.uri:
+            url: "{{ controller_api_url }}/job_templates/{{ jt_search.json.results[0].id }}/survey_spec/"
+            method: POST
+            body_format: json
+            headers:
+              Authorization: "Bearer {{ auth_token }}"
+            validate_certs: no
+            body:
+              name: "Provisioning Survey"
+              description: "Discovery automático para {{ inventory_hostname }} em {{ now(fmt='%Y-%m-%d %H:%M:%S') }}"
+              spec:
+                - question_name: "Confirmar Equipamento"
+                  variable: "survey_target_host"
+                  type: "text"
+                  default: "{{ inventory_hostname }}"
+                  required: true
+                - question_name: "Escolha a Interface Física"
+                  variable: "survey_interface"
+                  type: "multiplechoice"
+                  choices: "{{ survey_choices }}"
+                  required: true
+                - question_name: "Novo Endereço IP (CIDR)"
+                  variable: "survey_ip_cidr"
+                  type: "text"
+                  required: true
+            status_code: [200, 201]
+          delegate_to: localhost
+          when: jt_search.json.count > 0
+      run_once: yes
+      when: survey_choices is defined
