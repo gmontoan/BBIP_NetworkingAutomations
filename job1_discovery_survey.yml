@@ -116,6 +116,7 @@
             body_format: json
             headers:
               Authorization: "Bearer {{ auth_token }}"
+            validate_certs: no
             body:
               name: "Provisioning Survey"
               description: "Discovery automático para {{ inventory_hostname }} em {{ now(fmt='%Y-%m-%d %H:%M:%S') }}"
