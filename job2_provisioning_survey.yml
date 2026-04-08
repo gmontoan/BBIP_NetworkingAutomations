@@ -24,7 +24,7 @@
             ipv4:
               - address: "{{ survey_ip_cidr }}"
       vars:
-        # Mudança para Paramiko: Mais compatível com KEX antigos e evitamos o erro de 'invalid value ssh'
+        # Força o uso do Paramiko para suportar KEX legados (diffie-hellman-group14-sha1)
         ansible_network_cli_ssh_type: paramiko
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
