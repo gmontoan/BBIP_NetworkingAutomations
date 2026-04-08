@@ -23,7 +23,7 @@
       delegate_to: localhost
 
     # -------------------------------------------------------------------------
-    # 2. RECOLHA DE DADOS
+    # 2. RECOLHA DE DADOS (Scraping Multi-Vendor)
     # -------------------------------------------------------------------------
     - name: "Recolha de Dados de Rede"
       block:
@@ -48,21 +48,15 @@
             ansible_port: 830
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
-        - name: "Juniper: Normalizar saída para formato comum (via ansible.utils)"
+        - name: "Juniper: Normalizar saída via Regex (Método Nativo)"
           ansible.builtin.set_fact:
+            # Extraímos os nomes das interfaces diretamente do XML bruto usando Regex
+            # Isso evita erros de carregamento de filtros de coleções (xml_to_json/dict)
             ansible_net_interfaces: >-
               {% set interfaces = {} %}
-              {# Usamos xml_to_json que é nativo da coleção de utils de rede #}
-              {% set json_data = juniper_rpc_out.output | ansible.utils.xml_to_json | from_json %}
-              {% set rpc_reply = json_data.get('rpc-reply', json_data) %}
-              {% set info = rpc_reply.get('interface-information', {}) %}
-              {% set phys = info.get('physical-interface', []) %}
-              {# Normalização para lista #}
-              {% set phys_list = [phys] if phys is mapping else phys %}
-              {% for item in phys_list %}
-                {% if item.get('name') is defined %}
-                  {% set _ = interfaces.update({item['name']: {}}) %}
-                {% endif %}
+              {% set names = juniper_rpc_out.output | regex_findall('<name>([^<]+)</name>') %}
+              {% for name in names %}
+                {% set _ = interfaces.update({name: {}}) %}
               {% endfor %}
               {{ interfaces }}
           when: 
@@ -72,7 +66,7 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha ao processar {{ inventory_hostname }}. Verifique se o EE 1.1 está selecionado no Job Template."
+            msg: "Falha ao processar {{ inventory_hostname }}. Verifique a conectividade NETCONF."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM
