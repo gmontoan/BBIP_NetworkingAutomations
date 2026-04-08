@@ -2,10 +2,10 @@
 - name: "JOB 1: Discovery Robusto e Mutação Dinâmica de Survey"
   hosts: all
   gather_facts: no
-  connection: local  # A maioria das tarefas de controlo e API corre localmente no EE
+  connection: local
 
   vars:
-    # Configurações do Controller (Idealmente viriam de variáveis de inventário ou Credentials)
+    # Configurações do Controller
     controller_api_url: "https://192.168.15.200/api/controller/v2"
     target_jt_name: "Provisioning Devices"
     auth_token: "GFSZRmDUoQhNQijz3jTUp6nURS40uF"
@@ -18,26 +18,25 @@
       ansible.builtin.wait_for:
         host: "{{ inventory_hostname }}"
         port: "{{ (ansible_network_os is search('junos')) | ternary(830, 22) }}"
-        timeout: 5
-        msg: "O dispositivo não responde na porta de gestão. Verifique a rede ou o serviço SSH/NETCONF."
+        timeout: 8
+        msg: "O dispositivo não responde na porta de gestão correta."
       register: connectivity_check
       ignore_errors: yes
 
     # -------------------------------------------------------------------------
-    # 2. RECOLHA DE DADOS (Scraping com Redundância)
+    # 2. RECOLHA DE DADOS (Scraping Multi-Vendor)
     # -------------------------------------------------------------------------
     - name: "Recolha de Dados de Rede"
       block:
-        - name: "Cisco/Arista: Recolher Facts via CLI"
-          ansible.builtin.include_tasks: 
-            content: |
-              - name: "Cisco facts"
-                cisco.ios.ios_facts: { gather_subset: interfaces }
-                when: ansible_network_os in ['ios', 'cisco.ios.ios']
-              - name: "Arista facts"
-                arista.eos.eos_facts: { gather_subset: interfaces }
-                when: ansible_network_os in ['eos', 'arista.eos.eos']
-          when: ansible_network_os not in ['junos', 'juniper.device.junos']
+        - name: "Cisco: Recolher Facts via CLI"
+          cisco.ios.ios_facts:
+            gather_subset: interfaces
+          when: ansible_network_os in ['ios', 'cisco.ios.ios']
+
+        - name: "Arista: Recolher Facts via CLI"
+          arista.eos.eos_facts:
+            gather_subset: interfaces
+          when: ansible_network_os in ['eos', 'arista.eos.eos']
 
         - name: "Juniper: Recolher Facts via NETCONF"
           juniper.device.facts:
@@ -51,40 +50,39 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Não foi possível extrair dados de {{ inventory_hostname }}. O host será ignorado na atualização do Survey."
-          run_once: no
+            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique as credenciais no AAP."
 
     # -------------------------------------------------------------------------
-    # 3. TRATAMENTO E FILTRAGEM (Lógica Estável)
+    # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
     # -------------------------------------------------------------------------
     - name: "Processar Interfaces"
       block:
-        - name: "Filtrar Interfaces Reais (Regex Robusto)"
+        - name: "Filtrar Interfaces Reais"
           ansible.builtin.set_fact:
             interface_list: >-
               {{ 
                 ansible_net_interfaces.keys() | 
-                select('match', '^(Eth|Gi|Fa|Te|Po|ge-|xe-|et-).*') | 
-                reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard|Virtual|Sub') | 
+                select('match', '^(Eth|Gi|Fa|Te|Po|ge-|xe-|et-)[0-9/.]+$') | 
+                reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local') | 
                 list | sort 
               }}
 
-        - name: "Validar se foram encontradas interfaces"
+        - name: "Validar Resultado"
           ansible.builtin.assert:
             that: interface_list | length > 0
-            fail_msg: "Nenhuma interface física válida encontrada no dispositivo {{ inventory_hostname }}."
+            fail_msg: "Nenhuma interface física disponível em {{ inventory_hostname }}."
 
-        - name: "Preparar String de Opções"
+        - name: "Preparar Opções do Survey"
           ansible.builtin.set_fact:
             survey_choices: "{{ interface_list | join('\n') }}"
       when: ansible_net_interfaces is defined
 
     # -------------------------------------------------------------------------
-    # 4. SINCRONIZAÇÃO COM O CONTROLLER (API)
+    # 4. ATUALIZAÇÃO DO CONTROLLER (API)
     # -------------------------------------------------------------------------
-    - name: "Atualização de Survey no Controller"
+    - name: "Sincronização com o Controller"
       block:
-        - name: "API: Procurar Job Template pelo Nome"
+        - name: "API: Localizar Job Template"
           ansible.builtin.uri:
             url: "{{ controller_api_url }}/job_templates/?name={{ target_jt_name | urlencode }}"
             method: GET
@@ -93,12 +91,7 @@
             validate_certs: no
           register: jt_search
 
-        - name: "API: Validar existência do Job Template"
-          ansible.builtin.fail:
-            msg: "Job Template '{{ target_jt_name }}' não encontrado no Controller."
-          when: jt_search.json.count == 0
-
-        - name: "API: Atualizar Especificação do Survey"
+        - name: "API: Atualizar Survey Spec"
           ansible.builtin.uri:
             url: "{{ controller_api_url }}/job_templates/{{ jt_search.json.results[0].id }}/survey_spec/"
             method: POST
@@ -107,23 +100,24 @@
               Authorization: "Bearer {{ auth_token }}"
             body:
               name: "Provisioning Survey"
-              description: "Gerado automaticamente via Job de Discovery para {{ inventory_hostname }}"
+              description: "Discovery automático para {{ inventory_hostname }}"
               spec:
-                - question_name: "Equipamento de Destino"
+                - question_name: "Confirmar Equipamento"
                   variable: "survey_target_host"
                   type: "text"
                   default: "{{ inventory_hostname }}"
                   required: true
-                - question_name: "Interface Física Disponível"
+                - question_name: "Escolha a Interface"
                   variable: "survey_interface"
                   type: "multiplechoice"
                   choices: "{{ survey_choices }}"
                   required: true
-                - question_name: "Configuração IP (ex: 10.0.0.1/30)"
+                - question_name: "Novo Endereço IP (CIDR)"
                   variable: "survey_ip_cidr"
                   type: "text"
                   required: true
             status_code: [200, 201]
+          when: jt_search.json.count > 0
           environment:
             no_proxy: "127.0.0.1,localhost,{{ controller_api_url | urlsplit('hostname') }}"
       delegate_to: localhost
