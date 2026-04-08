@@ -11,7 +11,7 @@
 
   tasks:
     # -------------------------------------------------------------------------
-    # 1. VALIDAÇÃO DE CONECTIVIDADE (Pre-flight Check)
+    # 1. VALIDAÇÃO DE CONECTIVIDADE
     # -------------------------------------------------------------------------
     - name: "Check: Validar se a porta de gestão está aberta"
       ansible.builtin.wait_for:
@@ -23,7 +23,7 @@
       delegate_to: localhost
 
     # -------------------------------------------------------------------------
-    # 2. RECOLHA DE DADOS (Scraping Multi-Vendor)
+    # 2. RECOLHA DE DADOS
     # -------------------------------------------------------------------------
     - name: "Recolha de Dados de Rede"
       block:
@@ -39,7 +39,6 @@
 
         - name: "Juniper (cRPD): Recolher Interfaces via RPC NETCONF"
           ansible.netcommon.netconf_rpc:
-            # Enviamos o XML bruto para evitar erros de interpretação do cRPD
             rpc: get-interface-information
             content: "<terse/>"
             display: xml
@@ -49,16 +48,16 @@
             ansible_port: 830
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
-        - name: "Juniper: Normalizar saída para formato comum"
+        - name: "Juniper: Normalizar saída para formato comum (via ansible.utils)"
           ansible.builtin.set_fact:
             ansible_net_interfaces: >-
               {% set interfaces = {} %}
-              {% set xml_data = juniper_rpc_out.output | community.general.xml_to_dict %}
-              {# Navegação segura no dicionário XML do Junos #}
-              {% set rpc_reply = xml_data.get('rpc-reply', xml_data) %}
+              {# Usamos xml_to_json que é nativo da coleção de utils de rede #}
+              {% set json_data = juniper_rpc_out.output | ansible.utils.xml_to_json | from_json %}
+              {% set rpc_reply = json_data.get('rpc-reply', json_data) %}
               {% set info = rpc_reply.get('interface-information', {}) %}
               {% set phys = info.get('physical-interface', []) %}
-              {# Converter para lista se houver apenas uma interface #}
+              {# Normalização para lista #}
               {% set phys_list = [phys] if phys is mapping else phys %}
               {% for item in phys_list %}
                 {% if item.get('name') is defined %}
@@ -73,10 +72,10 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha ao processar {{ inventory_hostname }}. Verifique se o cRPD suporta o RPC get-interface-information."
+            msg: "Falha ao processar {{ inventory_hostname }}. Verifique se o EE 1.1 está selecionado no Job Template."
 
     # -------------------------------------------------------------------------
-    # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
+    # 3. TRATAMENTO E FILTRAGEM
     # -------------------------------------------------------------------------
     - name: "Processar Interfaces"
       block:
@@ -93,7 +92,7 @@
         - name: "Validar Resultado"
           ansible.builtin.assert:
             that: interface_list | length > 0
-            fail_msg: "Nenhuma interface física válida disponível em {{ inventory_hostname }}."
+            fail_msg: "Nenhuma interface física válida encontrada em {{ inventory_hostname }}."
 
         - name: "Preparar Opções do Survey"
           ansible.builtin.set_fact:
@@ -101,7 +100,7 @@
       when: ansible_net_interfaces is defined
 
     # -------------------------------------------------------------------------
-    # 4. ATUALIZAÇÃO DO CONTROLLER (API)
+    # 4. ATUALIZAÇÃO DO CONTROLLER
     # -------------------------------------------------------------------------
     - name: "Sincronização com o Controller"
       block:
@@ -124,7 +123,7 @@
               Authorization: "Bearer {{ auth_token }}"
             body:
               name: "Provisioning Survey"
-              description: "Discovery automático para {{ inventory_hostname }} ({{ ansible_network_os }})"
+              description: "Discovery automático para {{ inventory_hostname }}"
               spec:
                 - question_name: "Confirmar Equipamento"
                   variable: "survey_target_host"
@@ -143,7 +142,5 @@
             status_code: [200, 201]
           delegate_to: localhost
           when: jt_search.json.count > 0
-          environment:
-            no_proxy: "127.0.0.1,localhost,{{ controller_api_url | urlsplit('hostname') }}"
       run_once: yes
       when: survey_choices is defined
