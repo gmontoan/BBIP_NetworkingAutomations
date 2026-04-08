@@ -48,19 +48,14 @@
             ansible_port: 830
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
-        - name: "Juniper: Debug Raw Output (Apenas se falhar)"
-          ansible.builtin.debug:
-            var: juniper_rpc_out.output
-            verbosity: 1
-          when: ansible_network_os is search('junos')
-
-        - name: "Juniper: Normalizar saída via Regex (Método Nativo)"
+        - name: "Juniper: Normalizar saída via Regex (Versão Ultra-Resiliente)"
           ansible.builtin.set_fact:
-            # Procuramos padrões de interfaces diretamente entre os sinais '>' e '<' do XML
-            # O modificador (?i) torna a busca case-insensitive para capturar Eth ou eth
-            ansible_net_interfaces: "{{ dict(interface_names | zip([{} ] * (interface_names | length))) }}"
+            # Nova abordagem: Procuramos nomes de interfaces em qualquer lugar do XML que sigam o padrão Junos
+            # O Regex ignora tags e foca-se nos padrões: eth, ge-, xe-, et-, fxp, em
+            ansible_net_interfaces: "{{ dict(found_names | zip([{} ] * (found_names | length))) }}"
           vars:
-            interface_names: "{{ (juniper_rpc_out.output | string) | regex_findall('>(?i)(eth[0-9]+|ge-[0-9/.]+|xe-[0-9/.]+|et-[0-9/.]+|Em[0-9]+|fxp[0-9]+)<') }}"
+            # Regex ultra-permissivo: Procura padrões de interface Junos ignorando maiúsculas/minúsculas
+            found_names: "{{ (juniper_rpc_out.output | string) | regex_findall('(?i)(?:eth|ge-|xe-|et-|fxp|em)[0-9][0-9/.]*') | unique }}"
           when: 
             - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
             - juniper_rpc_out.output is defined
@@ -68,32 +63,31 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha ao processar {{ inventory_hostname }}. Verifique a conectividade NETCONF."
+            msg: "Falha ao processar {{ inventory_hostname }}. Verifique se o NETCONF está a responder com XML válido."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM
     # -------------------------------------------------------------------------
     - name: "Processar Interfaces"
       block:
-        - name: "Debug: Mostrar interfaces brutas encontradas"
+        - name: "Debug: Verificação de Segurança (Interfaces Brutas)"
           ansible.builtin.debug:
-            var: ansible_net_interfaces.keys() | list
-            verbosity: 0
+            msg: "Interfaces encontradas: {{ ansible_net_interfaces.keys() | list }}"
 
         - name: "Filtrar Interfaces Reais"
           ansible.builtin.set_fact:
             interface_list: >-
               {{ 
                 ansible_net_interfaces.keys() | 
-                select('match', '^(Eth|eth|Gi|Fa|Te|Po|ge-|xe-|et-).*') | 
-                reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap') | 
+                select('match', '(?i)^(eth|ge-|xe-|et-|Gi|Fa|Te|Eth|Po).*') | 
+                reject('search', '(?i)Vlan|Loop|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap|fxp') | 
                 list | sort 
               }}
 
         - name: "Validar Resultado"
           ansible.builtin.assert:
             that: interface_list | length > 0
-            fail_msg: "Nenhuma interface física válida encontrada em {{ inventory_hostname }}. Interfaces encontradas: {{ ansible_net_interfaces.keys() | list }}"
+            fail_msg: "Filtro resultou em zero. Interfaces brutas detetadas: {{ ansible_net_interfaces.keys() | list }}"
 
         - name: "Preparar Opções do Survey"
           ansible.builtin.set_fact:
@@ -124,7 +118,7 @@
               Authorization: "Bearer {{ auth_token }}"
             body:
               name: "Provisioning Survey"
-              description: "Discovery automático para {{ inventory_hostname }}"
+              description: "Discovery automático para {{ inventory_hostname }} em {{ ansible_date_time.iso8601 }}"
               spec:
                 - question_name: "Confirmar Equipamento"
                   variable: "survey_target_host"
