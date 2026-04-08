@@ -27,17 +27,15 @@
     # -------------------------------------------------------------------------
     - name: "Recolha de Dados de Rede"
       block:
-        - name: "Cisco: Recolher Facts via CLI (Suporte a SSH Legado)"
+        - name: "Cisco: Recolher Facts via CLI (Suporte via Paramiko)"
           cisco.ios.ios_facts:
             gather_subset: interfaces
           vars:
-            # Força o uso do binário SSH para respeitar os argumentos de algoritmos legados
-            ansible_network_cli_ssh_type: ssh
-            # Resolve o erro 'kex error: no match for method kex algos' em equipamentos antigos
+            # Paramiko é mais estável para algoritmos legados (DH Group 14, etc)
+            ansible_network_cli_ssh_type: paramiko
             ansible_ssh_common_args: >-
               -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
               -o HostKeyAlgorithms=+ssh-rsa
-              -o PubkeyAcceptedAlgorithms=+ssh-rsa
           when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
         - name: "Arista: Recolher Facts via CLI"
@@ -58,7 +56,7 @@
 
         - name: "Juniper: Normalizar saída via Regex (Versão Ultra-Resiliente)"
           ansible.builtin.set_fact:
-            # Extração agnóstica à estrutura XML para capturar ethX, ge-X/X/X, etc.
+            # Extração agnóstica à estrutura XML para capturar ethX (container) ou ge-X/X/X (hardware)
             ansible_net_interfaces: "{{ dict(found_names | zip([{} ] * (found_names | length))) }}"
           vars:
             found_names: "{{ (juniper_rpc_out.output | string) | regex_findall('(?i)(?:eth|ge-|xe-|et-|fxp|em)[0-9][0-9/.]*') | unique }}"
