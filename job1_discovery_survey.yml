@@ -37,18 +37,39 @@
             gather_subset: interfaces
           when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-        - name: "Juniper: Recolher Facts via NETCONF (Versão Estável)"
-          junipernetworks.junos.junos_facts:
-            gather_subset: interfaces
+        - name: "Juniper (cRPD): Recolher Interfaces via RPC NETCONF"
+          ansible.netcommon.netconf_get:
+            source: running
+            filter: |
+              <get-interface-information>
+                <terse/>
+              </get-interface-information>
+            display: xml
+          register: juniper_rpc_out
           vars:
             ansible_connection: ansible.netcommon.netconf
             ansible_port: 830
           when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
+        - name: "Juniper: Normalizar saída para formato comum"
+          ansible.builtin.set_fact:
+            ansible_net_interfaces: >-
+              {% set interfaces = {} %}
+              {% set xml_data = juniper_rpc_out.output | community.general.xml_to_dict %}
+              {% for item in xml_data['get-interface-information']['physical-interface'] %}
+                {% if item['name'] is string %}
+                  {% set _ = interfaces.update({item['name']: {}}) %}
+                {% endif %}
+              {% endfor %}
+              {{ interfaces }}
+          when: 
+            - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
+            - juniper_rpc_out.output is defined
+
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique as credenciais no AAP."
+            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. O cRPD pode não suportar o comando de Facts padrão."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
