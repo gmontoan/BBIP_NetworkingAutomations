@@ -50,15 +50,10 @@
 
         - name: "Juniper: Normalizar saída via Regex (Método Nativo)"
           ansible.builtin.set_fact:
-            # Extraímos os nomes das interfaces diretamente do XML bruto usando Regex
-            # Isso evita erros de carregamento de filtros de coleções (xml_to_json/dict)
-            ansible_net_interfaces: >-
-              {% set interfaces = {} %}
-              {% set names = juniper_rpc_out.output | regex_findall('<name>([^<]+)</name>') %}
-              {% for name in names %}
-                {% set _ = interfaces.update({name: {}}) %}
-              {% endfor %}
-              {{ interfaces }}
+            # Forçamos a conversão para dicionário para evitar erro de 'AnsibleUnsafeText'
+            ansible_net_interfaces: "{{ dict(interface_names | zip([{} ] * (interface_names | length))) }}"
+          vars:
+            interface_names: "{{ juniper_rpc_out.output | regex_findall('<name>([^<]+)</name>') }}"
           when: 
             - ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
             - juniper_rpc_out.output is defined
