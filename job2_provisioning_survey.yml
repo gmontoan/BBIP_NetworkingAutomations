@@ -25,7 +25,7 @@
               - address: "{{ survey_ip_cidr }}"
       vars:
         # Forçamos o Paramiko para suportar algoritmos legados (DH Group 14, Group 1, etc)
-        ansible_connection: ansible.netcommon.network_cli
+        ansible_connection: network_cli
         ansible_network_cli_ssh_type: paramiko
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
@@ -39,7 +39,7 @@
             description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
             enabled: true
       vars:
-        ansible_connection: ansible.netcommon.network_cli
+        ansible_connection: network_cli
         ansible_network_cli_ssh_type: paramiko
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
