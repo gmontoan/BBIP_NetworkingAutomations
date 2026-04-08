@@ -3,12 +3,6 @@
   hosts: all
   gather_facts: no
 
-  # -------------------------------------------------------------------------
-  # CORREÇÃO: "Efeito Fatiador" (Letra por Linha)
-  # Para evitar que o Survey mostre '[', 'G', 'i'..., garantimos que a lista
-  # de interfaces seja convertida numa string limpa separada por \n
-  # -------------------------------------------------------------------------
-
   tasks:
     # -------------------------------------------------------------------------
     # 1. SCRAPING DE INTERFACES (Cisco, Arista, Juniper)
@@ -24,9 +18,10 @@
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
     - name: "Juniper: Coletar Interfaces"
-      juniper.device.junos_facts:
-        gather_subset: interfaces
-      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
+      # CORREÇÃO: Usando o módulo moderno e removendo o 'provider' implícito
+      juniper.device.facts:
+        config_format: xml
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
     # -------------------------------------------------------------------------
     # 2. TRATAMENTO DE DADOS (Agora com limpeza reforçada)
@@ -38,7 +33,6 @@
 
     - name: "Gerar String para o Survey"
       ansible.builtin.set_fact:
-        # O AAP espera as opções separadas por \n dentro de uma única string
         survey_choices_string: "{{ interface_list | join('\n') }}"
 
     # -------------------------------------------------------------------------
@@ -76,7 +70,6 @@
             - question_name: "Selecione a Interface Física"
               variable: "survey_interface"
               type: "multiplechoice"
-              # USAMOS A STRING FORMATADA AQUI
               choices: "{{ survey_choices_string }}"
               required: true
             - question_name: "Configuração IPv4 (CIDR)"
