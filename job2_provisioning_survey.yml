@@ -15,7 +15,7 @@
         fail_msg: "ERRO: As variáveis do Survey não foram recebidas. Certifique-se de preencher o formulário no AAP."
 
     # -------------------------------------------------------------------------
-    # 1. CONFIGURAÇÃO - CISCO IOS (Suporte Robusto a SSH Legado)
+    # 1. CONFIGURAÇÃO - CISCO IOS (Suporte via Paramiko para SSH Legado)
     # -------------------------------------------------------------------------
     - name: "Cisco: Aplicar Configuração de Interface L3"
       cisco.ios.ios_l3_interfaces:
@@ -24,13 +24,11 @@
             ipv4:
               - address: "{{ survey_ip_cidr }}"
       vars:
-        # Força o uso do binário SSH para respeitar os argumentos de algoritmos legados
-        ansible_network_cli_ssh_type: ssh
-        # Resolve 'kex error': Aceita algoritmos legados (DH Group 14, Group 1, etc.)
+        # Mudança para Paramiko: Mais compatível com KEX antigos e evitamos o erro de 'invalid value ssh'
+        ansible_network_cli_ssh_type: paramiko
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
           -o HostKeyAlgorithms=+ssh-rsa
-          -o PubkeyAcceptedAlgorithms=+ssh-rsa
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
     - name: "Cisco: Ativar Interface e Descrição"
@@ -40,11 +38,10 @@
             description: "Configurado via AAP - Job 2 ({{ now(fmt='%Y-%m-%d') }})"
             enabled: true
       vars:
-        ansible_network_cli_ssh_type: ssh
+        ansible_network_cli_ssh_type: paramiko
         ansible_ssh_common_args: >-
           -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
           -o HostKeyAlgorithms=+ssh-rsa
-          -o PubkeyAcceptedAlgorithms=+ssh-rsa
       when: ansible_network_os in ['ios', 'cisco.ios.ios']
 
     # -------------------------------------------------------------------------
