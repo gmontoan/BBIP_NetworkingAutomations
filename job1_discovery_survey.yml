@@ -118,7 +118,7 @@
               Authorization: "Bearer {{ auth_token }}"
             body:
               name: "Provisioning Survey"
-              description: "Discovery automático para {{ inventory_hostname }} em {{ ansible_date_time.iso8601 }}"
+              description: "Discovery automático para {{ inventory_hostname }} em {{ now(fmt='%Y-%m-%d %H:%M:%S') }}"
               spec:
                 - question_name: "Confirmar Equipamento"
                   variable: "survey_target_host"
