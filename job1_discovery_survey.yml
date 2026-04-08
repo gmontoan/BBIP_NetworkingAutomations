@@ -17,18 +17,17 @@
         gather_subset: interfaces
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
-    - name: "Juniper: Coletar Interfaces"
-      # CORREÇÃO: Usando o módulo moderno e removendo o 'provider' implícito
-      juniper.device.facts:
-        config_format: xml
-      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
+    - name: "Juniper: Coletar Interfaces (SSH Puro)"
+      # Voltando para o módulo que não exige NETCONF/ncclient
+      junipernetworks.junos.junos_facts:
+        gather_subset: interfaces
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
 
     # -------------------------------------------------------------------------
-    # 2. TRATAMENTO DE DADOS (Agora com limpeza reforçada)
+    # 2. TRATAMENTO DE DADOS
     # -------------------------------------------------------------------------
     - name: "Filtrar Interfaces Físicas"
       ansible.builtin.set_fact:
-        # Criamos uma lista limpa e ordenada
         interface_list: "{{ ansible_net_interfaces.keys() | reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard') | list | sort }}"
 
     - name: "Gerar String para o Survey"
@@ -82,4 +81,4 @@
       run_once: yes
       when: jt_lookup.json.count > 0
       environment:
-        no_proxy: "127.0.0.1,localhost,192.168.15.200"
+        no_proxy: "
