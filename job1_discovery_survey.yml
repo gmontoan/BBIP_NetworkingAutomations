@@ -39,10 +39,9 @@
 
         - name: "Juniper (cRPD): Recolher Interfaces via RPC NETCONF"
           ansible.netcommon.netconf_rpc:
+            # Enviamos o XML bruto para evitar erros de interpretação do cRPD
             rpc: get-interface-information
-            # O cRPD aceita argumentos via dicionário no netconf_rpc
-            content:
-              terse: true
+            content: "<terse/>"
             display: xml
           register: juniper_rpc_out
           vars:
@@ -55,11 +54,13 @@
             ansible_net_interfaces: >-
               {% set interfaces = {} %}
               {% set xml_data = juniper_rpc_out.output | community.general.xml_to_dict %}
-              {# O caminho do dicionário varia conforme o retorno do RPC #}
-              {% set base_path = xml_data.get('rpc-reply', {}).get('interface-information', {}).get('physical-interface', []) %}
-              {# Garantir que base_path seja uma lista para o loop #}
-              {% set interface_list_raw = [base_path] if base_path is mapping else base_path %}
-              {% for item in interface_list_raw %}
+              {# Navegação segura no dicionário XML do Junos #}
+              {% set rpc_reply = xml_data.get('rpc-reply', xml_data) %}
+              {% set info = rpc_reply.get('interface-information', {}) %}
+              {% set phys = info.get('physical-interface', []) %}
+              {# Converter para lista se houver apenas uma interface #}
+              {% set phys_list = [phys] if phys is mapping else phys %}
+              {% for item in phys_list %}
                 {% if item.get('name') is defined %}
                   {% set _ = interfaces.update({item['name']: {}}) %}
                 {% endif %}
@@ -72,7 +73,7 @@
       rescue:
         - name: "Erro: Falha na recolha de facts"
           ansible.builtin.debug:
-            msg: "Falha crítica ao aceder a {{ inventory_hostname }}. Verifique se o serviço NETCONF está ativo."
+            msg: "Falha ao processar {{ inventory_hostname }}. Verifique se o cRPD suporta o RPC get-interface-information."
 
     # -------------------------------------------------------------------------
     # 3. TRATAMENTO E FILTRAGEM (Regex de Alta Precisão)
