@@ -18,12 +18,13 @@
       when: ansible_network_os in ['eos', 'arista.eos.eos']
 
     - name: "Juniper: Coletar Interfaces"
-      junipernetworks.junos.junos_facts:
-        gather_subset: interfaces
-      # Sobrescreve a variável do inventário (network_cli) forçando 'local' apenas nesta task
+      juniper.device.facts:
+        config_format: xml
       vars:
-        ansible_connection: local
-      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos']
+        # Usamos netconf com a nova imagem, evitando o erro de injeção de provider
+        ansible_connection: ansible.netcommon.netconf
+        ansible_port: 830
+      when: ansible_network_os in ['junos', 'junipernetworks.junos.junos', 'juniper.device.junos']
 
     # -------------------------------------------------------------------------
     # 2. TRATAMENTO DE DADOS
