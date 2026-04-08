@@ -50,7 +50,6 @@
 
         - name: "Juniper: Normalizar saída via Regex (Método Nativo)"
           ansible.builtin.set_fact:
-            # Forçamos a conversão para dicionário para evitar erro de 'AnsibleUnsafeText'
             ansible_net_interfaces: "{{ dict(interface_names | zip([{} ] * (interface_names | length))) }}"
           vars:
             interface_names: "{{ juniper_rpc_out.output | regex_findall('<name>([^<]+)</name>') }}"
@@ -68,20 +67,25 @@
     # -------------------------------------------------------------------------
     - name: "Processar Interfaces"
       block:
+        - name: "Debug: Mostrar interfaces brutas encontradas"
+          ansible.builtin.debug:
+            var: ansible_net_interfaces.keys() | list
+            verbosity: 0
+
         - name: "Filtrar Interfaces Reais"
           ansible.builtin.set_fact:
             interface_list: >-
               {{ 
                 ansible_net_interfaces.keys() | 
-                select('match', '^(Eth|Gi|Fa|Te|Po|ge-|xe-|et-).*') | 
-                reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local') | 
+                select('match', '^(Eth|eth|Gi|Fa|Te|Po|ge-|xe-|et-).*') | 
+                reject('search', 'Vlan|Loopback|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap') | 
                 list | sort 
               }}
 
         - name: "Validar Resultado"
           ansible.builtin.assert:
             that: interface_list | length > 0
-            fail_msg: "Nenhuma interface física válida encontrada em {{ inventory_hostname }}."
+            fail_msg: "Nenhuma interface física válida encontrada em {{ inventory_hostname }}. Interfaces brutas: {{ ansible_net_interfaces.keys() | list }}"
 
         - name: "Preparar Opções do Survey"
           ansible.builtin.set_fact:
