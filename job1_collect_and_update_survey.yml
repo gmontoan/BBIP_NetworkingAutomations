@@ -6,7 +6,8 @@
   vars:
     collected_interfaces_data: []
     # --- CONFIGURACOES DA API DO CONTROLLER ---
-    controller_api_url: "https://10.7.144.170/api/v2" 
+    # Rota corrigida para a arquitetura AAP 2.x (via Envoy Proxy)
+    controller_api_url: "https://10.7.144.170/api/controller/v2" 
     job_template_name_to_update: "job2_apply_interface_config"
     # [SECOPS] O token (controller_auth_token) e injetado pelo AAP via Custom Credential.
 
