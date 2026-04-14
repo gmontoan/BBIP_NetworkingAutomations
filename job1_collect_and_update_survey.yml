@@ -1,0 +1,97 @@
+---
+- name: Job 1 - Coleta de Dados e Atualizacao de Survey Dinamico
+  hosts: all
+  gather_facts: false
+  
+  # Variável para armazenar as interfaces que popularemos no Survey
+  vars:
+    collected_interfaces_data: []
+
+  tasks:
+    # ---------------------------------------------------------
+    # BLOCO 1: COLETA NO CISCO IOS XR
+    # ---------------------------------------------------------
+    - name: Coletar Fatos de Interfaces (Cisco IOS XR)
+      cisco.iosxr.iosxr_interfaces:
+        state: gathered
+      register: xr_interfaces
+      when: ansible_network_os == 'cisco.iosxr.iosxr'
+
+    - name: Parse de Dados (Cisco IOS XR)
+      ansible.builtin.set_fact:
+        collected_interfaces_data: "{{ collected_interfaces_data + [ item.name + ' (MTU Atual: ' + (item.mtu | string) + ')' ] }}"
+      loop: "{{ xr_interfaces.gathered }}"
+      when: 
+        - ansible_network_os == 'cisco.iosxr.iosxr'
+        - item.mtu is defined
+
+    # ---------------------------------------------------------
+    # BLOCO 2: COLETA NO HUAWEI NE5000E
+    # ---------------------------------------------------------
+    - name: Coletar Fatos de Interfaces e Parsear com TextFSM (Huawei NE)
+      ansible.netcommon.cli_parse:
+        command: "display interface"
+        parser:
+          name: ansible.netcommon.textfsm
+          os: huawei_vrp
+      register: ne_interfaces_parsed
+      when: ansible_network_os == 'huaweidatacom.ne.ne'
+
+    - name: Parse de Dados Reais (Huawei NE)
+      ansible.builtin.set_fact:
+        collected_interfaces_data: "{{ collected_interfaces_data + [ item.INTERFACE + ' (MTU Atual: ' + (item.MTU | string) + ')' ] }}"
+      loop: "{{ ne_interfaces_parsed.parsed }}"
+      when: 
+        - ansible_network_os == 'huaweidatacom.ne.ne'
+        - ne_interfaces_parsed.parsed is defined
+        - item.INTERFACE is defined
+        - item.MTU is defined
+
+    # ---------------------------------------------------------
+    # BLOCO 3: ATUALIZACAO DINAMICA DO SURVEY (AAP API)
+    # ---------------------------------------------------------
+- name: Job 1.5 - Modificando Survey do Job 2 no Controller
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # ID ou Nome do Job Template 2 cadastrado no AAP
+    job_template_name_to_update: "Template - Job 2 - Configurar MTU"
+    
+    # Agrupando todos os fatos do play anterior
+    all_interfaces_choices: "{{ hostvars | dict2items | map(attribute='value.collected_interfaces_data') | flatten | unique }}"
+
+  tasks:
+    - name: Garantir que temos interfaces coletadas
+      ansible.builtin.assert:
+        that:
+          - all_interfaces_choices | length > 0
+        fail_msg: "Nenhuma interface foi coletada. Abortando update do Survey."
+
+    - name: Atualizar Survey Spec do Job 2 via API do AAP
+      awx.awx.job_template:
+        name: "{{ job_template_name_to_update }}"
+        survey_enabled: true
+        survey_spec:
+          name: "Survey de Provisionamento de MTU"
+          description: "Selecione a interface coletada e defina o novo MTU."
+          spec:
+            - question_name: "Selecione a Interface Alvo:"
+              question_description: "Lista gerada dinamicamente a partir do Job 1."
+              variable: "target_interface_selection"
+              type: "multiplechoice"
+              choices: "{{ all_interfaces_choices | join('\n') }}"
+              required: true
+            - question_name: "Novo MTU (Sugestao Padrão: 9216):"
+              question_description: "Insira o valor de MTU para Jumbo Frames ou outro valor desejado."
+              variable: "target_mtu"
+              type: "integer"
+              default: 9216
+              required: true
+            - question_name: "Endereço IPv4 / CIDR (ex: 10.100.1.1/30):"
+              question_description: "Defina o endereço IP e a máscara da interface selecionada."
+              variable: "target_ipv4_cidr"
+              type: "text"
+              required: true
+      delegate_to: localhost
+      # Requer que o ambiente tenha as credenciais de Controller injetadas 
+      # (TOWER_HOST, TOWER_USERNAME, TOWER_PASSWORD ou OAuth Token via Credential Type)
