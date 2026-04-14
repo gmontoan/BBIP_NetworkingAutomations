@@ -35,11 +35,12 @@
 
     - name: Parse de Dados (Cisco IOS XR)
       ansible.builtin.set_fact:
-        collected_interfaces_data: "{{ collected_interfaces_data + [ item.name + ' (MTU Atual: ' + (item.mtu | string) + ')' ] }}"
+        # Usamos default('N/A') para interfaces cruas que ainda nao tem MTU definido no router
+        collected_interfaces_data: "{{ collected_interfaces_data + [ item.name + ' (MTU Atual: ' + (item.mtu | default('N/A') | string) + ')' ] }}"
       loop: "{{ xr_interfaces.gathered | default([]) }}"
       when: 
         - ansible_network_os == 'cisco.iosxr.iosxr'
-        - item.mtu is defined
+        # Removido o item.mtu is defined para nao ignorar interfaces limpas
 
     # ---------------------------------------------------------
     # BLOCO 2: COLETA NO HUAWEI NE5000E
@@ -55,12 +56,13 @@
 
     - name: Parse de Dados Reais (Huawei NE)
       ansible.builtin.set_fact:
-        collected_interfaces_data: "{{ collected_interfaces_data + [ item.INTERFACE + ' (MTU Atual: ' + (item.MTU | string) + ')' ] }}"
+        # Usamos default('N/A') para interfaces cruas que ainda nao tem MTU definido no router
+        collected_interfaces_data: "{{ collected_interfaces_data + [ item.INTERFACE + ' (MTU Atual: ' + (item.MTU | default('N/A') | string) + ')' ] }}"
       loop: "{{ ne_interfaces_parsed.parsed | default([]) }}"
       when: 
         - ansible_network_os == 'huaweidatacom.ne.ne'
         - item.INTERFACE is defined
-        - item.MTU is defined
+        # Removido o item.MTU is defined para nao ignorar interfaces limpas
 
     # ---------------------------------------------------------
     # BLOCO 3: ATUALIZACAO DINAMICA DO SURVEY (AAP API NATIVA)
