@@ -32,7 +32,7 @@
       ansible.utils.cli_parse:
         command: "display interface"
         parser:
-          name: ansible.netcommon.textfsm
+          name: ansible.utils.textfsm
           os: huawei_vrp
       register: ne_interfaces_parsed
       when: ansible_network_os == 'huaweidatacom.ne.ne'
