@@ -29,7 +29,7 @@
     # BLOCO 2: COLETA NO HUAWEI NE5000E
     # ---------------------------------------------------------
     - name: Coletar Fatos de Interfaces e Parsear com TextFSM (Huawei NE)
-      ansible.netcommon.cli_parse:
+      ansible.utils.cli_parse:
         command: "display interface"
         parser:
           name: ansible.netcommon.textfsm
