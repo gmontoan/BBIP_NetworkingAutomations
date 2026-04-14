@@ -5,10 +5,14 @@
   
   vars:
     collected_interfaces_data: []
+    # --- CONFIGURACOES DA API DO CONTROLLER ---
+    controller_api_url: "https://10.7.144.170/api/v2" 
+    job_template_name_to_update: "job2_apply_interface_config"
+    # [SECOPS] O token (controller_auth_token) e injetado pelo AAP via Custom Credential.
 
   tasks:
     # ---------------------------------------------------------
-    # BLOCO 0: PRE-FLIGHT CHECK (Validação de Conectividade)
+    # BLOCO 0: PRE-FLIGHT CHECK (Validacao de Conectividade)
     # ---------------------------------------------------------
     - name: "Check: Validar se a porta SSH esta aberta"
       ansible.builtin.wait_for:
@@ -57,98 +61,87 @@
         - item.INTERFACE is defined
         - item.MTU is defined
 
-# ---------------------------------------------------------
-# BLOCO 3: ATUALIZACAO DINAMICA DO SURVEY (AAP API NATIVA)
-# ---------------------------------------------------------
-- name: Atualizacao do Survey do Job 2
-  hosts: localhost
-  gather_facts: false
-  vars:
-    # --- CONFIGURACOES DA API DO CONTROLLER ---
-    # Apontando para o IP real do seu servidor AAP (mais seguro contra falhas de DNS)
-    controller_api_url: "https://10.7.144.170/api/v2" 
-    job_template_name_to_update: "job2_apply_interface_config"
-    
-    # [SECOPS] O token (controller_auth_token) foi removido daqui!
-    # Ele será injetado de forma segura e encriptada pelo AAP via Custom Credential.
-    
-    # 1. Agrupa os fatos brutos de todos os hosts
-    raw_interfaces_choices: "{{ hostvars | dict2items | map(attribute='value.collected_interfaces_data') | flatten | select('defined') | unique }}"
+    # ---------------------------------------------------------
+    # BLOCO 3: ATUALIZACAO DINAMICA DO SURVEY (AAP API NATIVA)
+    # ---------------------------------------------------------
+    - name: "Sincronizacao com o Controller (Atualizar Job 2)"
+      block:
+        - name: "Tratamento de Dados: Agrupar e Filtrar Interfaces"
+          ansible.builtin.set_fact:
+            all_interfaces_choices: >-
+              {{
+                ansible_play_hosts | 
+                map('extract', hostvars, 'collected_interfaces_data') | 
+                flatten | select('defined') | unique |
+                select('match', '(?i)^(Gi|Te|Hu|Eth|Po|ge-|xe-|et-|xge|XG).*') | 
+                reject('search', '(?i)Vlan|Loop|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap|fxp|Tunnel') | 
+                list | sort
+              }}
 
-    # 2. TRATAMENTO E FILTRAGEM (Data Cleaning) - O "Filtro de Ouro"
-    all_interfaces_choices: >-
-      {{
-        raw_interfaces_choices | 
-        select('match', '(?i)^(Gi|Te|Hu|Eth|Po|ge-|xe-|et-|xge|XG).*') | 
-        reject('search', '(?i)Vlan|Loop|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap|fxp|Tunnel') | 
-        list | sort
-      }}
+        - name: Garantir que temos interfaces coletadas
+          ansible.builtin.assert:
+            that:
+              - all_interfaces_choices | length > 0
+            fail_msg: "Nenhuma interface foi coletada. O Survey nao pode ser atualizado vazio."
 
-  tasks:
-    - name: Garantir que temos interfaces coletadas
-      ansible.builtin.assert:
-        that:
-          - all_interfaces_choices | length > 0
-        fail_msg: "Nenhuma interface foi coletada. O Survey não pode ser atualizado vazio."
+        - name: Debug - Verificar interfaces que serao injetadas
+          ansible.builtin.debug:
+            msg: "Lista de interfaces capturadas para o Survey: {{ all_interfaces_choices }}"
 
-    - name: Debug - Verificar interfaces que serão injetadas
-      ansible.builtin.debug:
-        msg: "Lista de interfaces capturadas para o Survey: {{ all_interfaces_choices }}"
+        - name: "API: Localizar ID do Job Template"
+          ansible.builtin.uri:
+            url: "{{ controller_api_url }}/job_templates/?name={{ job_template_name_to_update | urlencode }}"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ controller_auth_token }}"
+            validate_certs: false
+          register: jt_search
 
-    # --- NOVA LÓGICA: CHAMADAS NATIVAS VIA URI (Bypass ao awx.awx) ---
-    - name: "API: Localizar ID do Job Template"
-      ansible.builtin.uri:
-        url: "{{ controller_api_url }}/job_templates/?name={{ job_template_name_to_update | urlencode }}"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ controller_auth_token }}"
-        validate_certs: false
-      register: jt_search
+        - name: "API: Atualizar Survey Spec (Forcar o JSON)"
+          ansible.builtin.uri:
+            url: "{{ controller_api_url }}/job_templates/{{ jt_search.json.results[0].id }}/survey_spec/"
+            method: POST
+            body_format: json
+            headers:
+              Authorization: "Bearer {{ controller_auth_token }}"
+            validate_certs: false
+            body:
+              name: "Survey de Provisionamento de Interface"
+              description: "Selecione a interface e defina os parametros de rede L2 e L3."
+              spec:
+                - question_name: "Selecione a Interface Alvo:"
+                  question_description: "Lista gerada dinamicamente a partir do Job 1."
+                  variable: "target_interface_selection"
+                  type: "multiplechoice"
+                  choices: "{{ all_interfaces_choices | join('\n') }}"
+                  required: true
+                - question_name: "Novo MTU (Sugestao Padrao: 9216):"
+                  question_description: "Insira o valor de MTU para Jumbo Frames."
+                  variable: "target_mtu"
+                  type: "integer"
+                  default: 9216
+                  required: true
+                - question_name: "Endereco IPv4 / CIDR (ex: 10.100.1.1/30):"
+                  question_description: "Defina o endereco IP e a mascara."
+                  variable: "target_ipv4_cidr"
+                  type: "text"
+                  required: true
+            status_code: [200, 201]
+          when: jt_search.json.count > 0
+
+        - name: "API: Garantir que o Survey esta Ativo (Habilitado)"
+          ansible.builtin.uri:
+            url: "{{ controller_api_url }}/job_templates/{{ jt_search.json.results[0].id }}/"
+            method: PATCH
+            body_format: json
+            headers:
+              Authorization: "Bearer {{ controller_auth_token }}"
+            validate_certs: false
+            body:
+              survey_enabled: true
+            status_code: [200, 201]
+          when: jt_search.json.count > 0
+
+      # A magia que resolve o problema do "Limit" acontece nestas duas linhas:
       delegate_to: localhost
-
-    - name: "API: Atualizar Survey Spec (Forçar o JSON)"
-      ansible.builtin.uri:
-        url: "{{ controller_api_url }}/job_templates/{{ jt_search.json.results[0].id }}/survey_spec/"
-        method: POST
-        body_format: json
-        headers:
-          Authorization: "Bearer {{ controller_auth_token }}"
-        validate_certs: false
-        body:
-          name: "Survey de Provisionamento de Interface"
-          description: "Selecione a interface e defina os parametros de rede L2 e L3."
-          spec:
-            - question_name: "Selecione a Interface Alvo:"
-              question_description: "Lista gerada dinamicamente a partir do Job 1."
-              variable: "target_interface_selection"
-              type: "multiplechoice"
-              choices: "{{ all_interfaces_choices | join('\n') }}"
-              required: true
-            - question_name: "Novo MTU (Sugestao Padrao: 9216):"
-              question_description: "Insira o valor de MTU para Jumbo Frames."
-              variable: "target_mtu"
-              type: "integer"
-              default: 9216
-              required: true
-            - question_name: "Endereco IPv4 / CIDR (ex: 10.100.1.1/30):"
-              question_description: "Defina o endereco IP e a mascara."
-              variable: "target_ipv4_cidr"
-              type: "text"
-              required: true
-        status_code: [200, 201]
-      delegate_to: localhost
-      when: jt_search.json.count > 0
-
-    - name: "API: Garantir que o Survey está Ativo (Habilitado)"
-      ansible.builtin.uri:
-        url: "{{ controller_api_url }}/job_templates/{{ jt_search.json.results[0].id }}/"
-        method: PATCH
-        body_format: json
-        headers:
-          Authorization: "Bearer {{ controller_auth_token }}"
-        validate_certs: false
-        body:
-          survey_enabled: true
-        status_code: [200, 201]
-      delegate_to: localhost
-      when: jt_search.json.count > 0
+      run_once: true
