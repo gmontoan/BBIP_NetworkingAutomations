@@ -8,6 +8,18 @@
 
   tasks:
     # ---------------------------------------------------------
+    # BLOCO 0: PRE-FLIGHT CHECK (Validação de Conectividade)
+    # ---------------------------------------------------------
+    - name: "Check: Validar se a porta SSH esta aberta"
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 22
+        timeout: 10
+      delegate_to: localhost
+      ignore_errors: yes
+      register: connectivity_check
+
+    # ---------------------------------------------------------
     # BLOCO 1: COLETA NO CISCO IOS XR
     # ---------------------------------------------------------
     - name: Coletar Fatos de Interfaces (Cisco IOS XR)
@@ -52,23 +64,40 @@
   hosts: localhost
   gather_facts: false
   vars:
-    # ATENCAO: Este nome deve ser EXATAMENTE igual ao nome do Job Template 2 no AAP
+    # ATENÇÃO CRÍTICA: Este nome tem de ser EXATAMENTE igual ao nome do Job Template na interface (GUI) do AAP.
+    # Se o nome não coincidir perfeitamente, o Ansible criará um Job novo em vez de atualizar o seu.
     job_template_name_to_update: "job2_apply_interface_config"
     
-    # Agrupa os fatos do play anterior. O 'select' evita erros caso hostvars venha nulo.
-    all_interfaces_choices: "{{ hostvars | dict2items | map(attribute='value.collected_interfaces_data') | flatten | select('defined') | unique }}"
+    # 1. Agrupa os fatos brutos de todos os hosts
+    raw_interfaces_choices: "{{ hostvars | dict2items | map(attribute='value.collected_interfaces_data') | flatten | select('defined') | unique }}"
+
+    # 2. TRATAMENTO E FILTRAGEM (Data Cleaning) - O "Filtro de Ouro"
+    # Mantém apenas físicas/reais e descarta lógicas, virtuais e de gerência.
+    all_interfaces_choices: >-
+      {{
+        raw_interfaces_choices | 
+        select('match', '(?i)^(Gi|Te|Hu|Eth|Po|ge-|xe-|et-|xge|XG).*') | 
+        reject('search', '(?i)Vlan|Loop|Null|mgmt|Management|irb|Standard|Virtual|Sub|Local|lo0|dsc|tap|fxp|Tunnel') | 
+        list | sort
+      }}
 
   tasks:
     - name: Garantir que temos interfaces coletadas
       ansible.builtin.assert:
         that:
           - all_interfaces_choices | length > 0
-        fail_msg: "Nenhuma interface foi coletada. O Survey nao pode ser atualizado vazio."
+        fail_msg: "Nenhuma interface foi coletada. O Survey não pode ser atualizado vazio."
+
+    - name: Debug - Verificar interfaces que serão injetadas
+      ansible.builtin.debug:
+        msg: "Lista de interfaces capturadas para o Survey: {{ all_interfaces_choices }}"
 
     - name: Atualizar Survey Spec do Job 2 via API do AAP
       awx.awx.job_template:
         name: "{{ job_template_name_to_update }}"
+        organization: "Default"  # <--- ADICIONADO: Trava de segurança para garantir a alteração do Job exato
         survey_enabled: true
+        validate_certs: false  # Garante que certificados autoassinados no laboratório não bloqueiam a API
         survey_spec:
           name: "Survey de Provisionamento de Interface"
           description: "Selecione a interface e defina os parametros de rede L2 e L3."
@@ -79,14 +108,14 @@
               type: "multiplechoice"
               choices: "{{ all_interfaces_choices | join('\n') }}"
               required: true
-            - question_name: "Novo MTU (Sugestao Padrão: 9216):"
+            - question_name: "Novo MTU (Sugestao Padrao: 9216):"
               question_description: "Insira o valor de MTU para Jumbo Frames."
               variable: "target_mtu"
               type: "integer"
               default: 9216
               required: true
-            - question_name: "Endereço IPv4 / CIDR (ex: 10.100.1.1/30):"
-              question_description: "Defina o endereço IP e a máscara."
+            - question_name: "Endereco IPv4 / CIDR (ex: 10.100.1.1/30):"
+              question_description: "Defina o endereco IP e a mascara."
               variable: "target_ipv4_cidr"
               type: "text"
               required: true
