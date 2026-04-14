@@ -1,9 +1,8 @@
 ---
-- name: Job 1 - Coleta de Dados e Atualizacao de Survey Dinamico
+- name: job1_collect_and_update_survey
   hosts: all
   gather_facts: false
   
-  # Variável para armazenar as interfaces que popularemos no Survey
   vars:
     collected_interfaces_data: []
 
@@ -20,7 +19,7 @@
     - name: Parse de Dados (Cisco IOS XR)
       ansible.builtin.set_fact:
         collected_interfaces_data: "{{ collected_interfaces_data + [ item.name + ' (MTU Atual: ' + (item.mtu | string) + ')' ] }}"
-      loop: "{{ xr_interfaces.gathered }}"
+      loop: "{{ xr_interfaces.gathered | default([]) }}"
       when: 
         - ansible_network_os == 'cisco.iosxr.iosxr'
         - item.mtu is defined
@@ -40,40 +39,39 @@
     - name: Parse de Dados Reais (Huawei NE)
       ansible.builtin.set_fact:
         collected_interfaces_data: "{{ collected_interfaces_data + [ item.INTERFACE + ' (MTU Atual: ' + (item.MTU | string) + ')' ] }}"
-      loop: "{{ ne_interfaces_parsed.parsed }}"
+      loop: "{{ ne_interfaces_parsed.parsed | default([]) }}"
       when: 
         - ansible_network_os == 'huaweidatacom.ne.ne'
-        - ne_interfaces_parsed.parsed is defined
         - item.INTERFACE is defined
         - item.MTU is defined
 
-    # ---------------------------------------------------------
-    # BLOCO 3: ATUALIZACAO DINAMICA DO SURVEY (AAP API)
-    # ---------------------------------------------------------
-- name: Job 1.5 - Modificando Survey do Job 2 no Controller
+# ---------------------------------------------------------
+# BLOCO 3: ATUALIZACAO DINAMICA DO SURVEY (AAP CONTROLLER)
+# ---------------------------------------------------------
+- name: Atualizacao do Survey do Job 2
   hosts: localhost
   gather_facts: false
   vars:
-    # ID ou Nome do Job Template 2 cadastrado no AAP
-    job_template_name_to_update: "Template - Job 2 - Configurar MTU"
+    # ATENCAO: Este nome deve ser EXATAMENTE igual ao nome do Job Template 2 no AAP
+    job_template_name_to_update: "job2_apply_interface_config"
     
-    # Agrupando todos os fatos do play anterior
-    all_interfaces_choices: "{{ hostvars | dict2items | map(attribute='value.collected_interfaces_data') | flatten | unique }}"
+    # Agrupa os fatos do play anterior. O 'select' evita erros caso hostvars venha nulo.
+    all_interfaces_choices: "{{ hostvars | dict2items | map(attribute='value.collected_interfaces_data') | flatten | select('defined') | unique }}"
 
   tasks:
     - name: Garantir que temos interfaces coletadas
       ansible.builtin.assert:
         that:
           - all_interfaces_choices | length > 0
-        fail_msg: "Nenhuma interface foi coletada. Abortando update do Survey."
+        fail_msg: "Nenhuma interface foi coletada. O Survey nao pode ser atualizado vazio."
 
     - name: Atualizar Survey Spec do Job 2 via API do AAP
       awx.awx.job_template:
         name: "{{ job_template_name_to_update }}"
         survey_enabled: true
         survey_spec:
-          name: "Survey de Provisionamento de MTU"
-          description: "Selecione a interface coletada e defina o novo MTU."
+          name: "Survey de Provisionamento de Interface"
+          description: "Selecione a interface e defina os parametros de rede L2 e L3."
           spec:
             - question_name: "Selecione a Interface Alvo:"
               question_description: "Lista gerada dinamicamente a partir do Job 1."
@@ -82,16 +80,13 @@
               choices: "{{ all_interfaces_choices | join('\n') }}"
               required: true
             - question_name: "Novo MTU (Sugestao Padrão: 9216):"
-              question_description: "Insira o valor de MTU para Jumbo Frames ou outro valor desejado."
+              question_description: "Insira o valor de MTU para Jumbo Frames."
               variable: "target_mtu"
               type: "integer"
               default: 9216
               required: true
             - question_name: "Endereço IPv4 / CIDR (ex: 10.100.1.1/30):"
-              question_description: "Defina o endereço IP e a máscara da interface selecionada."
+              question_description: "Defina o endereço IP e a máscara."
               variable: "target_ipv4_cidr"
               type: "text"
               required: true
-      delegate_to: localhost
-      # Requer que o ambiente tenha as credenciais de Controller injetadas 
-      # (TOWER_HOST, TOWER_USERNAME, TOWER_PASSWORD ou OAuth Token via Credential Type)
