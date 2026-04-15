@@ -1,0 +1,17 @@
+Value Required INTERFACE (\S+)
+Value LINK_STATUS (UP|DOWN|ADMINDOWN|*down)
+Value PROTOCOL_STATUS (UP|DOWN|DOWN$s$)
+Value DESCRIPTION (.*)
+Value MTU (\d+)
+Value MAC_ADDRESS ([0-9a-fA-F-]+)
+Value IP_ADDRESS (\d+.\d+.\d+.\d+/\d+|unassigned)
+
+Start
+^${INTERFACE}\s+current state\s*:\s*${LINK_STATUS}
+^Line protocol current state\s*:\s*${PROTOCOL_STATUS}
+^Description:\s*${DESCRIPTION}
+^.The Maximum Transmit Unit is\s${MTU}
+^Internet Address is\s*${IP_ADDRESS}
+^Hardware address is\s*${MAC_ADDRESS}
+^\s*$$ -> Record
+^<.>\s$$ -> Record
