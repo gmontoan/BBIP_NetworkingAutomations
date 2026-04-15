@@ -1,5 +1,5 @@
 ---
-- name: Job 2 - Provisionamento Completo de Interface (MTU, IP e Descricao)
+- name: job2_apply_interface_config
   hosts: all
   gather_facts: false
   
@@ -48,20 +48,21 @@
     # ---------------------------------------------------------
     # APLICACAO: HUAWEI NE5000E
     # ---------------------------------------------------------
-    - name: Configurar L2, L3 e Descricao (Huawei NE)
-      huaweidatacom.ne.ne_config:
-        lines:
-          - "description {{ auto_description }}"
-          - "mtu {{ target_mtu }}"
-          - "ip address {{ target_ip }} {{ target_mask }}"
-          - "undo shutdown"  # Garante que a interface suba (Administratively UP)
-        parents: "interface {{ clean_interface_name }}"
+    - name: Configurar L2, L3 e Descricao (Huawei NE via Native CLI)
+      ansible.netcommon.cli_config:
+        config: |
+          interface {{ clean_interface_name }}
+          description {{ auto_description }}
+          mtu {{ target_mtu }}
+          ip address {{ target_ip }} {{ target_mask }}
+          undo shutdown
+          commit
       when: ansible_network_os == 'huaweidatacom.ne.ne'
       register: ne_config_result
 
-    - name: Salvar configuracao (Huawei NE)
-      huaweidatacom.ne.ne_command:
-        commands: "save"
+    - name: Salvar configuracao (Huawei NE via Native CLI)
+      ansible.netcommon.cli_command:
+        command: "save"
         prompt:
           - "Are you sure to continue"
         answer:
