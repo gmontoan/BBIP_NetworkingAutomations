@@ -15,4 +15,3 @@ Start
   ^Hardware address is\s*${MAC_ADDRESS}
   ^\s*$$ -> Record
   ^<.*>\s*$$ -> Record
-```
