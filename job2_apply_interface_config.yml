@@ -48,24 +48,23 @@
     # ---------------------------------------------------------
     # APLICACAO: HUAWEI NE5000E
     # ---------------------------------------------------------
-    - name: Configurar L2, L3 e Descricao (Huawei NE via cli_command loop)
-      ansible.netcommon.cli_command:
-        command: "{{ item }}"
-      loop:
-        - "system-view"
-        - "interface {{ clean_interface_name }}"
-        - "description {{ auto_description }}"
-        - "mtu {{ target_mtu }}"
-        - "ip address {{ target_ip }} {{ target_mask }}"
-        - "undo shutdown"
-        - "commit"
-        - "return"  # Sai do modo config e volta para a view root <HUAWEI>
+    - name: Configurar L2, L3 e Descricao (Huawei NE via ne_command)
+      huaweidatacom.ne.ne_command:
+        commands:
+          - "system-view"
+          - "interface {{ clean_interface_name }}"
+          - "description {{ auto_description }}"
+          - "mtu {{ target_mtu }}"
+          - "ip address {{ target_ip }} {{ target_mask }}"
+          - "undo shutdown"
+          - "commit"
+          - "return"  # Sai do modo config e volta para a view root <HUAWEI>
       when: ansible_network_os == 'huaweidatacom.ne.ne'
       register: ne_config_result
 
-    - name: Salvar configuracao (Huawei NE via Native CLI)
-      ansible.netcommon.cli_command:
-        command: "save"
+    - name: Salvar configuracao (Huawei NE)
+      huaweidatacom.ne.ne_command:
+        commands: "save"
         prompt:
           - "Are you sure to continue"
         answer:
