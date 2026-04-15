@@ -48,25 +48,19 @@
     # ---------------------------------------------------------
     # APLICACAO: HUAWEI NE5000E
     # ---------------------------------------------------------
-    - name: Salvar estado do SO original (Bypass SecOps)
-      ansible.builtin.set_fact:
-        original_network_os: "{{ ansible_network_os }}"
+    - name: Configurar L2, L3 e Descricao (Huawei NE via cli_command loop)
+      ansible.netcommon.cli_command:
+        command: "{{ item }}"
+      loop:
+        - "system-view"
+        - "interface {{ clean_interface_name }}"
+        - "description {{ auto_description }}"
+        - "mtu {{ target_mtu }}"
+        - "ip address {{ target_ip }} {{ target_mask }}"
+        - "undo shutdown"
+        - "commit"
+        - "return"  # Sai do modo config e volta para a view root <HUAWEI>
       when: ansible_network_os == 'huaweidatacom.ne.ne'
-
-    - name: Configurar L2, L3 e Descricao (Huawei NE via Native CLI)
-      ansible.netcommon.cli_config:
-        config: |
-          interface {{ clean_interface_name }}
-          description {{ auto_description }}
-          mtu {{ target_mtu }}
-          ip address {{ target_ip }} {{ target_mask }}
-          undo shutdown
-          commit
-      vars:
-        # BYPASS: A collection huaweidatacom.ne tem um bug de Regex (\V) no Python 3.12.
-        # Mudamos temporariamente para 'community.network.ce' para usar o motor nativo Red Hat!
-        ansible_network_os: community.network.ce
-      when: (original_network_os | default('')) == 'huaweidatacom.ne.ne'
       register: ne_config_result
 
     - name: Salvar configuracao (Huawei NE via Native CLI)
@@ -76,8 +70,6 @@
           - "Are you sure to continue"
         answer:
           - "Y"
-      vars:
-        ansible_network_os: community.network.ce
       when: 
-        - (original_network_os | default('')) == 'huaweidatacom.ne.ne'
+        - ansible_network_os == 'huaweidatacom.ne.ne'
         - ne_config_result.changed
