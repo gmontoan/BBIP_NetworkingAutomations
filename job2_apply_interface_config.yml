@@ -52,7 +52,9 @@
       ansible.utils.cli_parse:
         command: "{{ item }}"
         parser:
-          name: ansible.netcommon.native
+          name: ansible.utils.textfsm
+          # O grande truque: Usamos o template que já existe no repo como um parser "dummy" para aceitar qualquer saída!
+          template_path: "templates/huawei_vrp_display_interface.textfsm"
       loop:
         - "system-view"
         - "interface {{ clean_interface_name }}"
@@ -65,6 +67,6 @@
       when: ansible_network_os == 'huaweidatacom.ne.ne'
 
     - name: Salvar configuracao (Huawei NE via raw bypass)
-      ansible.builtin.raw: "save\nY"
+      ansible.builtin.raw: "save\nY\n"
       when: ansible_network_os == 'huaweidatacom.ne.ne'
       ignore_errors: true  # O módulo raw pode não ler o prompt final a tempo, o ignore protege o job
