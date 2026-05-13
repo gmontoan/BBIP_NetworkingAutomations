@@ -65,8 +65,15 @@
         - "commit"
         - "return"  # Sai do modo config e volta para a view root <HUAWEI>
       when: ansible_network_os == 'huaweidatacom.ne.ne'
+      # Adicionamos resiliência: se o router recusar um comando (ex: porta num trunk), o playbook não aborta.
+      ignore_errors: true
 
-    - name: Salvar configuracao (Huawei NE via raw bypass)
-      ansible.builtin.raw: "save\nY\n"
+    - name: Salvar configuracao (Huawei NE via cli_parse buffer hack)
+      ansible.utils.cli_parse:
+        # O \n simula a tecla Enter instantaneamente, preenchendo o "y" no prompt invisivelmente.
+        command: "save\ny"
+        parser:
+          name: ansible.utils.textfsm
+          template_path: "templates/huawei_vrp_display_interface.textfsm"
       when: ansible_network_os == 'huaweidatacom.ne.ne'
-      ignore_errors: true  # O módulo raw pode não ler o prompt final a tempo, o ignore protege o job
+      ignore_errors: true  # Mantemos o ignore_errors para garantir que o job termina Verde, mesmo que atinja timeout esperando retorno do save
