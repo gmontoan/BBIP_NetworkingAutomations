@@ -51,6 +51,8 @@
     - name: Configurar L2, L3 e Descricao (Huawei NE via cli_parse bypass)
       ansible.utils.cli_parse:
         command: "{{ item }}"
+        parser:
+          name: ansible.netcommon.native
       loop:
         - "system-view"
         - "interface {{ clean_interface_name }}"
